@@ -101,6 +101,19 @@ button.go{background:var(--accent);border-color:var(--accent);color:#fff;min-hei
 .mini{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .mini button,.btnlink,button.mini1{min-height:38px;padding:6px 10px;font-size:14px;font-weight:700}
 .btnlink{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:12px;text-decoration:none;background:var(--panel);color:var(--ink)}
+.cbtn.tres{grid-template-columns:1.2fr 1fr 1fr}
+.cbtn.tres button{padding:8px 4px;font-size:16px}
+.enneg{color:var(--ok);font-weight:700;font-size:16px}
+.turnos{display:flex;gap:6px;margin:0 0 8px}
+.turnos button{flex:1}
+.sigbar{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap;margin:6px 0 10px}
+.sigbar .empiezo{margin:0;flex:1;min-width:200px}
+a.go2,button.go2{display:inline-flex;align-items:center;justify-content:center;min-height:48px;padding:8px 16px;border-radius:12px;background:var(--accent);border:1px solid var(--accent);color:#fff;font-weight:700;font-size:16px;text-decoration:none;font-family:inherit;cursor:pointer}
+:root[data-theme="dark"] a.go2,:root[data-theme="dark"] button.go2{color:#0d1a15}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) a.go2,:root:not([data-theme="light"]) button.go2{color:#0d1a15}}
+.salida{border:1px solid var(--line);border-radius:14px;padding:10px 12px;margin:0 0 12px;background:var(--panel)}
+.salida .srow{display:flex;gap:10px;align-items:center;justify-content:space-between;flex-wrap:wrap}
+.salida label{display:flex;gap:8px;align-items:center;color:var(--ink);font-size:15px}
 .chips{display:flex;gap:8px;flex-wrap:wrap;margin:4px 0 8px}
 .chip{background:var(--panel);border:1px solid var(--line);border-radius:999px;padding:4px 12px;font-size:15px}
 .chip.alerta{background:var(--err-bg);color:var(--err);border-color:var(--err)}
@@ -139,14 +152,24 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
 <main>
   <div id="aviso"></div>
   <section id="vHoy">
+    <div class="turnos"><button id="tMan" aria-pressed="true">Mañana</button><button id="tTar" aria-pressed="false">Tarde</button></div>
     <div id="hoyTop"></div>
+    <div class="salida hidden" id="hoySalida">
+      <div class="srow">
+        <button class="go2" id="bSalida">Calcular salida</button>
+        <label>Margen por tránsito
+          <select id="margen"><option value="0">0 min</option><option value="10">10 min</option><option value="15">15 min</option><option value="20">20 min</option><option value="30">30 min</option><option value="45">45 min</option></select>
+        </label>
+      </div>
+      <div id="salidaRes"></div>
+    </div>
     <ol class="list" id="hoyLista" style="padding:0"></ol>
     <div id="hoyFin"></div>
     <details class="det hidden" id="hoyVolver"><summary>Cerrados: volver a pasar (<span id="nVolver">0</span>)</summary><ol class="list" id="listaVolver" style="padding:0;margin-top:8px"></ol></details>
     <details class="det hidden" id="hoyHechos"><summary>Visitados hoy (<span id="nHechos">0</span>)</summary><ol class="list" id="listaHechos" style="padding:0;margin-top:8px"></ol></details>
     <div class="acc">
       <label>Objetivo del día
-        <select id="objK"><option value="10">10</option><option value="12">12</option><option value="15">15</option><option value="19">19</option><option value="22">22</option><option value="25">25</option></select>
+        <select id="objK"><option value="8">8</option><option value="10">10</option><option value="12">12</option><option value="15">15</option><option value="19">19</option><option value="22">22</option><option value="25">25</option></select>
       </label>
       <button id="bRecalc">Recalcular orden</button>
     </div>
@@ -202,13 +225,24 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
 <script>
 /* Lógica de "Hoy": estados de visita, punto de partida, orden sugerido y control. Sin pantalla: se puede probar sola. */
 window.RepartoPlan=(function(){
-  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000};
+  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, DIAS_ARRASTRE:3, CORTE_TURNO:840, CORTA_S:120, MOVIO_M:100, JORNADA:{manana:360,tarde:300}, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000};
+
+  // ---------- turnos: mañana (hasta las 14) y tarde ----------
+  // mañana: se visita desde que abren hasta que cierran al mediodía. tarde: desde que reabren hasta el cierre de la noche.
+  var TURNOS={
+    manana:{START:480,  ROJO:780,  AMBAR:840,  TARDIO:870,  DESCONOCIDO:840,  ctx:"mañana"},
+    tarde: {START:960,  ROJO:1140, AMBAR:1200, TARDIO:1260, DESCONOCIDO:1200, ctx:"tarde"}
+  };
+  function T(t){ return TURNOS[t]||TURNOS.manana; }
+  function turnoAhora(ts){ var d=new Date(ts); return (d.getHours()*60+d.getMinutes())<CFG.CORTE_TURNO?"manana":"tarde"; }
 
   // ---------- horas ----------
   function toMin(s){ var m=/^(\d{1,2}):(\d{2})$/.exec(String(s==null?"":s)); return m?(+m[1])*60+(+m[2]):null; }
   function fmtMin(n){ var h=Math.floor(n/60), m=n%60; return h+":"+(m<10?"0":"")+m; }
-  function apertura(h){ return h?toMin(h.abreM):null; }
-  function cierre(h){ if(!h) return null; return toMin(h.corta?h.cierraM:h.cierraN); }   // hasta cuándo se lo puede visitar a la mañana
+  // apertura que importa en el turno: a la mañana abreM; a la tarde reabre (abreT) si corta, o ya está abierto (abreM) si es corrido
+  function apertura(h,turno){ if(!h) return null; if(turno==="tarde") return toMin(h.corta?h.abreT:h.abreM); return toMin(h.abreM); }
+  // cierre que importa en el turno: a la mañana cierra al mediodía (o corrido); a la tarde cierra a la noche
+  function cierre(h,turno){ if(!h) return null; if(turno==="tarde") return toMin(h.cierraN); return toMin(h.corta?h.cierraM:h.cierraN); }
   function abiertoEn(h,min){
     if(!h) return null; var aM=toMin(h.abreM), cN=toMin(h.cierraN); if(aM==null||cN==null) return null;
     if(!h.corta) return min>=aM&&min<cN;
@@ -222,13 +256,14 @@ window.RepartoPlan=(function(){
     if(h.corta){ var cM=toMin(h.cierraM), aT=toMin(h.abreT); if(min>=cM&&min<aT) return {k:"cerrado",txt:"Reabre "+fmtMin(aT)}; }
     return {k:"cerro",txt:"Ya cerró"};
   }
-  function etiquetas(h){
+  function etiquetas(h,turno){
     if(!h) return [{cls:"gray",txt:"Sin horario"}];
-    var out=[], ap=apertura(h), ci=cierre(h);
-    if(ap!=null) out.push({cls:ap<=CFG.START_MIN?"green":"amber",txt:"Abre "+fmtMin(ap)});
+    var t=T(turno), out=[], ap=apertura(h,turno), ci=cierre(h,turno);
+    if(turno==="tarde"&&!h.corta) out.push({cls:"green",txt:"Corrido"});
+    else if(ap!=null) out.push({cls:ap<=t.START?"green":"amber",txt:"Abre "+fmtMin(ap)});
     if(ci!=null){
-      if(!h.corta&&ci>=CFG.CIERRE_TARDE) out.push({cls:"gray",txt:"No cierra"});
-      else out.push({cls:ci<=780?"red":(ci<=840?"amber":"gray"),txt:"Cierra "+fmtMin(ci)});
+      if(turno!=="tarde"&&!h.corta&&ci>=t.TARDIO) out.push({cls:"gray",txt:"No cierra"});
+      else out.push({cls:ci<=t.ROJO?"red":(ci<=t.AMBAR?"amber":"gray"),txt:"Cierra "+fmtMin(ci)});
     }
     return out;
   }
@@ -261,7 +296,7 @@ window.RepartoPlan=(function(){
   // Por cliente: lista de eventos (v=visitado, c=cerrado) en orden; "p" (deshacer) borra el último.
   function eventos(marcas){
     var por={}; dedupe(marcas).slice().sort(function(a,b){return a.ts-b.ts;}).forEach(function(m){
-      if(m.t==="i") return;
+      if(m.t==="i"||m.t==="l"||m.t==="x") return;
       var l=por[m.c]||(por[m.c]=[]);
       if(m.t==="p") l.pop(); else l.push(m);
     });
@@ -286,16 +321,87 @@ window.RepartoPlan=(function(){
     return ptr;
   }
 
+  // ---------- lo que quedó pendiente de días anteriores ----------
+  function fechaCorta(ts){ var d=new Date(ts); return d.getDate()+"/"+(d.getMonth()+1); }
+  // Devuelve {cod: "motivo"} de los clientes que ayer (o el último día trabajado) quedaron cerrados o salteados y siguen sin visitarse.
+  function arrastre(ring,marcas,ahora){
+    var hoyIni=inicioDia(ahora), ms=dedupe(marcas), ev=eventos(ms), lim=hoyIni-CFG.DIAS_ARRASTRE*CFG.DIA_MS, out={};
+    ring.forEach(function(c){
+      var e=ev[c.cod]||[], last=e.length?e[e.length-1]:null;
+      if(last&&last.t==="c"&&last.ts<hoyIni&&last.ts>=lim) out[c.cod]="Estaba cerrado el "+fechaCorta(last.ts)+": volver a pasar";
+    });
+    var ultimo=0;
+    ring.forEach(function(c){ var lv=ultimaVisita(ev[c.cod]||[]); if(lv&&lv.ts<hoyIni&&lv.ts>=lim&&lv.ts>ultimo) ultimo=lv.ts; });
+    if(ultimo){
+      var ini=inicioDia(ultimo), r=controlDia(ring,ms,ini,ini+CFG.DIA_MS);
+      r.salteados.forEach(function(cod){
+        var lv=ultimaVisita(ev[cod]||[]);
+        if(lv&&lv.ts>=ahora-CFG.DIAS_CICLO*CFG.DIA_MS) return;     // ya se visitó después
+        if(!out[cod]) out[cod]="Quedó pendiente del "+fechaCorta(ini);
+      });
+    }
+    return out;
+  }
+
+  // ---------- tiempo en el negocio ----------
+  function fmtDur(seg){ seg=Math.max(0,Math.round(seg)); if(seg<60) return seg+" s"; var m=Math.floor(seg/60), s=seg%60; if(m<60) return m+" min"+(s?" "+s+" s":""); return Math.floor(m/60)+" h "+(m%60)+" min"; }
+  function fmtCron(seg){ seg=Math.max(0,Math.round(seg)); var h=Math.floor(seg/3600), m=Math.floor(seg%3600/60), s=seg%60, p=function(n){return (n<10?"0":"")+n;}; return (h?h+":":"")+p(m)+":"+p(s); }
+  // Si el cliente tiene una llegada marcada (desde "desde") que todavía no se cerró con Visitado/Cerrado/anulación, la devuelve.
+  function llegadaAbierta(marcas,cod,desde){
+    var ms=dedupe(marcas).filter(function(m){return m.c===cod&&m.ts>=desde;}).sort(function(a,b){return a.ts-b.ts;}), ab=null;
+    ms.forEach(function(m){ if(m.t==="l") ab=m; else if(m.t==="v"||m.t==="c"||m.t==="x") ab=null; });
+    return ab;
+  }
+  // Pares llegada → salida (Visitado o Cerrado) del mismo cliente: cuánto estuvo.
+  function duraciones(marcas,ring){
+    var cods=null; if(ring){ cods={}; ring.forEach(function(c){cods[c.cod]=1;}); }
+    var ms=dedupe(marcas).filter(function(m){return !cods||cods[m.c];}).sort(function(a,b){return a.ts-b.ts;}), abierta={}, out=[];
+    ms.forEach(function(m){
+      if(m.t==="l") abierta[m.c]=m;
+      else if(m.t==="x") delete abierta[m.c];
+      else if(m.t==="v"||m.t==="c"){
+        var l=abierta[m.c];
+        if(l&&m.ts>=l.ts&&m.ts-l.ts<=4*3600000) out.push({c:m.c,seg:Math.round((m.ts-l.ts)/1000),ts:m.ts,tipo:m.t,id:m.id});
+        delete abierta[m.c];
+      }
+    });
+    return out;
+  }
+  // Minutos de traslado: desde que sale de un cliente hasta que marca llegada al siguiente (mismo día, entre 30 s y 60 min).
+  function viajes(marcas,ring){
+    var cods=null; if(ring){ cods={}; ring.forEach(function(c){cods[c.cod]=1;}); }
+    var ms=dedupe(marcas).filter(function(m){return !cods||cods[m.c];}).sort(function(a,b){return a.ts-b.ts;}), salida=null, out=[];
+    ms.forEach(function(m){
+      if(m.t==="v"||m.t==="c") salida=m.ts;
+      else if(m.t==="l"&&salida!=null){ var g=(m.ts-salida)/60000; if(g>=0.5&&g<=60&&inicioDia(m.ts)===inicioDia(salida)) out.push(g); salida=null; }
+    });
+    return out;
+  }
+  function promedio(a){ return a.length?a.reduce(function(x,y){return x+y;},0)/a.length:null; }
+  // Ritmo de una zona: cuánto demora en cada negocio, cuánto en llegar al siguiente y cuántos clientes entran en una jornada.
+  function ritmo(ring,marcas){
+    var d=duraciones(marcas,ring), v=viajes(marcas,ring), vis=promedio(d.map(function(x){return x.seg/60;})), via=promedio(v);
+    var r={n:d.length,nViajes:v.length,visitaMin:vis,viajeMin:via,porJornada:null};
+    if(vis!=null&&via!=null&&vis+via>0) r.porJornada={manana:Math.floor(CFG.JORNADA.manana/(vis+via)),tarde:Math.floor(CFG.JORNADA.tarde/(vis+via))};
+    return r;
+  }
+  // Promedio de demora (en minutos) por cliente, de mayor a menor.
+  function demoraPorCliente(marcas,ring){
+    var por={}; duraciones(marcas,ring).forEach(function(x){ (por[x.c]||(por[x.c]=[])).push(x.seg/60); });
+    return Object.keys(por).map(function(c){ return {c:c,n:por[c].length,min:promedio(por[c])}; }).sort(function(a,b){return b.min-a.min;});
+  }
+
   // ---------- el plan del día ----------
-  function keyAbre(h){ var a=apertura(h); return a==null?CFG.START_MIN:a; }   // el que abre primero va primero (sin horario = 8:00)
-  function keyCierre(h){ var c=cierre(h); if(c==null) return CFG.CIERRE_DESCONOCIDO; return Math.min(c,CFG.CIERRE_TARDE); }
+  // el que abre primero va primero (sin horario = hora de arranque del turno). A la tarde, lo que ya está abierto cuenta como "abre al arrancar".
+  function keyAbre(h,turno){ var t=T(turno), a=apertura(h,turno); if(a==null) return t.START; return turno==="tarde"?Math.max(a,t.START):a; }
+  function keyCierre(h,turno){ var t=T(turno), c=cierre(h,turno); if(c==null) return t.DESCONOCIDO; return Math.min(c,t.TARDIO); }
   function ordenEstable(list,keyFn){
     return list.map(function(c,i){return {c:c,i:i,k:keyFn(c)};}).sort(function(a,b){return a.k-b.k||a.i-b.i;}).map(function(x){return x.c;});
   }
   function armarPlan(o){
     var ring=o.ring||[], n=ring.length, hor=o.horarios||{};
     if(!n) return {items:[],volver:[],partidaCod:"",ptr:-1};
-    var ahora=o.ahora, hoyIni=inicioDia(ahora), marcas=dedupe(o.marcas), ev=eventos(marcas);
+    var ahora=o.ahora, hoyIni=inicioDia(ahora), marcas=dedupe(o.marcas), ev=eventos(marcas), turno=o.turno||"manana";
     var ptr=indicePartida(ring,marcas,ev,hoyIni);
     var K=Math.max(0,(o.K||19)-(o.hechosHoy||0)), pend=[], volver=[];
     for(var off=1;off<=n;off++){
@@ -305,34 +411,38 @@ window.RepartoPlan=(function(){
       if(e.reciente) continue;
       pend.push(c);
     }
+    var carry=o.sinArrastre?{}:arrastre(ring,marcas,ahora), pc=[], pr=[];
+    pend.forEach(function(c){ (carry[c.cod]?pc:pr).push(c); });
+    pend=pc.concat(pr);                       // lo pendiente de ayer va primero
     var base=pend.slice(0,K), L=base.length, W=Math.min(CFG.VENTANA,Math.floor(L/2)), hN=o.sinHead?0:W, tN=W;
     var head=base.slice(0,hN), mid=base.slice(hN,L-tN), tail=base.slice(L-tN);
     var partida=ptr>=0?ring[ptr]:null, motivos={};
     // Inicio: los que ya abren (o abren más temprano) primero; los que abren tarde, después.
     if(head.length>1){
-      var nh=ordenEstable(head,function(c){return keyAbre(hor[c.cod]);});
+      var nh=ordenEstable(head,function(c){return keyAbre(hor[c.cod],turno);});
       if(nh.some(function(c,i){return c!==head[i];})){
         if(conviene(head,nh,partida,hor)){
-          nh.forEach(function(c,i){ var j=head.indexOf(c); var ap=apertura(hor[c.cod]); if(i<j) motivos[c.cod]=(ap!=null?"Abre "+fmtMin(ap):"Abre temprano")+": va antes"; else if(i>j) motivos[c.cod]=(ap!=null?"Abre "+fmtMin(ap):"Abre más tarde")+": va después"; });
+          nh.forEach(function(c,i){ var j=head.indexOf(c); var ap=apertura(hor[c.cod],turno); if(i<j) motivos[c.cod]=(ap!=null?"Abre "+fmtMin(ap):"Abre temprano")+": va antes"; else if(i>j) motivos[c.cod]=(ap!=null?"Abre "+fmtMin(ap):"Abre más tarde")+": va después"; });
           head=nh;
         }
       }
     }
     // Final: los que cierran antes, primero; los que cierran tarde o no cierran, al final.
     if(tail.length>1){
-      var nt=ordenEstable(tail,function(c){return keyCierre(hor[c.cod]);});
+      var nt=ordenEstable(tail,function(c){return keyCierre(hor[c.cod],turno);});
       if(nt.some(function(c,i){return c!==tail[i];})){
         var desdeT=mid.length?mid[mid.length-1]:(head.length?head[head.length-1]:partida);
         if(conviene(tail,nt,desdeT,hor)){
-          nt.forEach(function(c,i){ var j=tail.indexOf(c); if(i<j) motivos[c.cod]="Cierra "+fmtMin(cierre(hor[c.cod]))+": hacelo antes"; else if(i>j) motivos[c.cod]="Cierra tarde: queda para el final"; });
+          nt.forEach(function(c,i){ var j=tail.indexOf(c); if(i<j) motivos[c.cod]="Cierra "+fmtMin(cierre(hor[c.cod],turno))+": hacelo antes"; else if(i>j) motivos[c.cod]="Cierra tarde: queda para el final"; });
           tail=nt;
         }
       }
     }
     var items=[];
-    head.forEach(function(c){ items.push({c:c,grupo:"inicio",motivo:motivos[c.cod]||""}); });
-    mid.forEach(function(c){ items.push({c:c,grupo:"medio",motivo:""}); });
-    tail.forEach(function(c){ items.push({c:c,grupo:"final",motivo:motivos[c.cod]||""}); });
+    var mot=function(c){ var a=carry[c.cod], b=motivos[c.cod]; return a&&b?a+" · "+b:(a||b||""); };
+    head.forEach(function(c){ items.push({c:c,grupo:"inicio",motivo:mot(c),deAyer:!!carry[c.cod]}); });
+    mid.forEach(function(c){ items.push({c:c,grupo:"medio",motivo:mot(c),deAyer:!!carry[c.cod]}); });
+    tail.forEach(function(c){ items.push({c:c,grupo:"final",motivo:mot(c),deAyer:!!carry[c.cod]}); });
     return {items:items,volver:volver,partidaCod:partida?partida.cod:"",ptr:ptr};
   }
 
@@ -340,22 +450,29 @@ window.RepartoPlan=(function(){
   function controlDia(ring,marcas,iniMs,finMs){
     var ms=dedupe(marcas).filter(function(m){return m.ts<finMs;}), ev=eventos(ms), n=ring.length;
     if(!n) return {visitados:[],salteados:[],cerrados:[]};
-    var ptr=indicePartida(ring,ms,ev,iniMs), off={}, vis=[], maxOff=-1, cerr=[];
+    var ptr=indicePartida(ring,ms,ev,iniMs), off={}, vis=[], maxOff=-1, minOff=Infinity, cerr=[];
     ring.forEach(function(c,i){
       off[c.cod]=(((i-ptr-1)%n)+n)%n;
       var evs=ev[c.cod]||[], lv=ultimaVisita(evs), last=evs.length?evs[evs.length-1]:null;
-      if(lv&&lv.ts>=iniMs&&lv.ts<finMs){ vis.push(c.cod); if(off[c.cod]>maxOff) maxOff=off[c.cod]; }
+      if(lv&&lv.ts>=iniMs&&lv.ts<finMs){ vis.push(c.cod); if(off[c.cod]>maxOff) maxOff=off[c.cod]; if(off[c.cod]<minOff) minOff=off[c.cod]; }
       if(last&&last.t==="c"&&last.ts>=iniMs&&last.ts<finMs) cerr.push(c.cod);
     });
     var salt=[];
     if(maxOff>0) ring.forEach(function(c){
       if(off[c.cod]>=maxOff) return;
+      if(ptr<0&&off[c.cod]<=minOff) return;                          // sin historial: solo cuenta lo que quedó entre el primero y el último visitado
       var evs=ev[c.cod]||[], lv=ultimaVisita(evs), last=evs.length?evs[evs.length-1]:null;
       if(lv&&lv.ts>=finMs-CFG.DIAS_CICLO*CFG.DIA_MS) return;          // ya estaba visitado en este ciclo
       if(last&&last.t==="c"&&last.ts>=iniMs&&last.ts<finMs) return;   // va en "cerrados"
       salt.push(c.cod);
     });
     return {visitados:vis,salteados:salt,cerrados:cerr,ptr:ptr};
+  }
+  // cuántas visitas de hoy se hicieron en el turno (mañana: antes de las 14; tarde: desde las 14)
+  function hechosTurno(ring,marcas,ahora,turno){
+    var ev=eventos(marcas), ini=inicioDia(ahora), corte=ini+CFG.CORTE_TURNO*60000, n=0;
+    ring.forEach(function(c){ var lv=ultimaVisita(ev[c.cod]||[]); if(lv&&lv.ts>=ini&&((turno==="tarde")?lv.ts>=corte:lv.ts<corte)) n++; });
+    return n;
   }
   function avanceZona(ring,marcas,ahora){
     var ev=eventos(marcas), ini=inicioDia(ahora), r={total:ring.length,visitados:0,hoy:0,cerradosHoy:0};
@@ -378,6 +495,14 @@ window.RepartoPlan=(function(){
     var c=proyectar(cLat,cLng,z); return {z:z,cx:c.x,cy:c.y};
   }
 
+  // ---------- hora de salida ----------
+  // abreMin: minuto del día en que abre el primer cliente. durMin: viaje sin tránsito. margenMin: colchón por tránsito.
+  function calcularSalida(o){
+    var dur=Math.ceil(o.durMin), total=dur+(o.margenMin||0), salir=o.abreMin-total, llegaYa=o.ahoraMin+dur;
+    return {viajeMin:dur,totalMin:total,salirMin:salir,llegaSiSaleYaMin:llegaYa,minutosTarde:Math.max(0,llegaYa-o.abreMin),yaDebioSalir:o.ahoraMin>salir};
+  }
+  function estimarMin(distMetros){ return distMetros*1.35/1000/25*60; }   // 25 km/h promedio en el conurbano, con 35% de desvío sobre la línea recta
+
   function moverEnLista(orden,cod,delta,visibles){
     var vi=visibles.indexOf(cod), vj=vi+delta; if(vi<0||vj<0||vj>=visibles.length) return orden;
     var a=orden.indexOf(cod), b=orden.indexOf(visibles[vj]); if(a<0||b<0) return orden;
@@ -386,7 +511,7 @@ window.RepartoPlan=(function(){
 
   return {CFG:CFG,toMin:toMin,fmtMin:fmtMin,apertura:apertura,cierre:cierre,abiertoEn:abiertoEn,estadoAhora:estadoAhora,etiquetas:etiquetas,distM:distM,
     dedupe:dedupe,inicioDia:inicioDia,eventos:eventos,ultimaVisita:ultimaVisita,estadoCliente:estadoCliente,indicePartida:indicePartida,
-    armarPlan:armarPlan,controlDia:controlDia,avanceZona:avanceZona,proyectar:proyectar,ajustarMapa:ajustarMapa,moverEnLista:moverEnLista};
+    armarPlan:armarPlan,fmtDur:fmtDur,fmtCron:fmtCron,llegadaAbierta:llegadaAbierta,duraciones:duraciones,viajes:viajes,ritmo:ritmo,demoraPorCliente:demoraPorCliente,turnoAhora:turnoAhora,hechosTurno:hechosTurno,TURNOS:TURNOS,arrastre:arrastre,calcularSalida:calcularSalida,estimarMin:estimarMin,controlDia:controlDia,avanceZona:avanceZona,proyectar:proyectar,ajustarMapa:ajustarMapa,moverEnLista:moverEnLista};
 })();
 
 </script>
@@ -431,7 +556,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="4 · PRUEBA";
+  const VER="7 · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -477,13 +602,13 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   });
 
   // ---------- GPS ----------
-  function leerGPS(){
+  function leerGPS(ms){
     return new Promise((res,rej)=>{
       if(!("geolocation" in navigator)) return rej({tipo:"nogps"});
       navigator.geolocation.getCurrentPosition(
         p=>res({lat:+p.coords.latitude.toFixed(6),lng:+p.coords.longitude.toFixed(6),acc:Math.round(p.coords.accuracy)}),
         e=>rej({tipo:e.code===1?"permiso":(e.code===3?"tiempo":"senal")}),
-        {enableHighAccuracy:true,timeout:20000,maximumAge:0});
+        {enableHighAccuracy:true,timeout:ms||20000,maximumAge:0});
     });
   }
   function msgGPS(t){
@@ -498,7 +623,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   function pintarCola(){ const n=cola().length; $("cola").textContent=n? n+" sin subir":""; }
   let subiendo=false;
   async function subirCola(){
-    if(subiendo||!configurado||!PIN) return; const q=cola(); if(!q.length) return;
+    if(subiendo||!configurado||!PIN) return; const q=cola().filter(r=>!(r.esperaGps&&Date.now()-r.ts<20000)); if(!q.length) return;
     subiendo=true;
     try{ const ok=await apiEnviar(q); const resto=cola().filter(r=>ok.indexOf(r.id)<0); lsSet(COLA_KEY,resto); if(ok.length) cargarDatos(); }
     catch(e){}
@@ -542,8 +667,13 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
   // ---------- HOY: plan del día, visitas y orden sugerido ----------
   const P_=window.RepartoPlan, PLAN_KEY="prueba_reparto_plan_v1", OBJ_KEY="prueba_reparto_obj_v1", DIST_LEJOS=150;
-  const CODIGO={visita:"v",cerrado:"c",pendiente:"p",inicio:"i"};
-  function objetivo(){ const v=Number(lsGet(OBJ_KEY,19)); return v>0?v:19; }
+  const CODIGO={visita:"v",cerrado:"c",pendiente:"p",inicio:"i",llegada:"l",anulaLlegada:"x"};
+  const TURNO_KEY="prueba_reparto_turno_v1";
+  function turnoActual(){ const t=lsGet(TURNO_KEY,null); return (t&&t.fecha===fechaLocal()&&(t.t==="manana"||t.t==="tarde"))?t.t:P_.turnoAhora(Date.now()); }
+  function setTurno(t){ lsSet(TURNO_KEY,{fecha:fechaLocal(),t:t}); pintarHoy(); }
+  function objetivo(){ const o=lsGet(OBJ_KEY,null), t=turnoActual(); if(o&&typeof o==="object"&&Number(o[t])>0) return Number(o[t]); if(typeof o==="number"&&o>0&&t==="manana") return o; return t==="tarde"?12:19; }
+  function setObjetivo(v){ let o=lsGet(OBJ_KEY,null); if(typeof o==="number") o={manana:o}; if(!o||typeof o!=="object") o={}; o[turnoActual()]=v; lsSet(OBJ_KEY,o); }
+  function kz(z){ return z.id+"|"+turnoActual(); }
   function minutosAhora(){ const d=new Date(); return d.getHours()*60+d.getMinutes(); }
   function hhmm(ts){ const d=new Date(ts); return pad(d.getHours())+":"+pad(d.getMinutes()); }
   function fechaLocal(ts){ const d=new Date(ts||Date.now()); return d.getFullYear()+"-"+pad(d.getMonth()+1)+"-"+pad(d.getDate()); }
@@ -559,16 +689,92 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   function planDeHoy(){ const p=lsGet(PLAN_KEY,null), f=fechaLocal(); return (p&&p.fecha===f)?p:{fecha:f,zonas:{}}; }
   function zonaHechos(z){
     const ini=P_.inicioDia(Date.now()), ev=P_.eventos(S.marcas), out=[];
-    z.clientes.forEach(c=>{ const lv=P_.ultimaVisita(ev[c.cod]||[]); if(lv&&lv.ts>=ini) out.push({c:c,ts:lv.ts}); });
+    z.clientes.forEach(c=>{ const lv=P_.ultimaVisita(ev[c.cod]||[]); if(lv&&lv.ts>=ini) out.push({c:c,ts:lv.ts,id:lv.id}); });
     return out.sort((a,b)=>b.ts-a.ts);
   }
   function construirPlan(z){
-    const r=P_.armarPlan({ring:z.clientes,horarios:S.horarios,marcas:S.marcas,ahora:Date.now(),K:objetivo(),hechosHoy:zonaHechos(z).length});
-    const P=planDeHoy(), zp={K:objetivo(),partida:r.partidaCod,orden:[],motivos:{},manual:false};
-    r.items.forEach(i=>{ zp.orden.push(i.c.cod); if(i.motivo) zp.motivos[i.c.cod]=i.motivo; });
-    P.zonas[z.id]=zp; lsSet(PLAN_KEY,P); return zp;
+    const r=P_.armarPlan({ring:z.clientes,horarios:S.horarios,marcas:S.marcas,ahora:Date.now(),K:objetivo(),hechosHoy:P_.hechosTurno(z.clientes,S.marcas,Date.now(),turnoActual()),turno:turnoActual()});
+    const P=planDeHoy(), zp={K:objetivo(),partida:r.partidaCod,orden:[],motivos:{},deAyer:{},manual:false};
+    r.items.forEach(i=>{ zp.orden.push(i.c.cod); if(i.motivo) zp.motivos[i.c.cod]=i.motivo; if(i.deAyer) zp.deAyer[i.c.cod]=true; });
+    P.zonas[kz(z)]=zp; lsSet(PLAN_KEY,P); return zp;
   }
-  function planZona(z){ const zp=planDeHoy().zonas[z.id]; return (zp&&zp.K===objetivo())?zp:construirPlan(z); }
+  function planZona(z){ const zp=planDeHoy().zonas[kz(z)]; return (zp&&zp.K===objetivo())?zp:construirPlan(z); }
+
+  // ---------- "Llegué": tiempo en el negocio ----------
+  const ARR_KEY="prueba_reparto_llegadas_v1";
+  function arrGet(){ const a=lsGet(ARR_KEY,null); return (a&&a.fecha===fechaLocal())?a:{fecha:fechaLocal(),c:{}}; }
+  function arrSet(a){ lsSet(ARR_KEY,a); }
+  function llegadaDe(cod){
+    const m=P_.llegadaAbierta(S.marcas,cod,P_.inicioDia(Date.now())); if(!m) return null;
+    const a=arrGet().c[cod], mismo=a&&a.ts===m.ts;
+    return {ts:m.ts,id:m.id,lat:mismo?a.lat:null,lng:mismo?a.lng:null};
+  }
+  async function llegue(c){
+    if(llegadaDe(c.cod)) return;
+    const ts=Date.now(), reg={id:"llegada-"+c.cod+"-"+ts,tipo:"llegada",cod:c.cod,nom:c.nom,zona:S.zonaSel,ts:ts,offline:false,esperaGps:true};
+    const q=cola(); q.push(reg); lsSet(COLA_KEY,q); nuevaMarca(reg); pintarCola(); pintarHoy();    // el reloj arranca ya, sin esperar al GPS
+    let pos=null; try{ pos=await leerGPS(12000); }catch(e){}
+    const q2=cola(), r2=q2.find(x=>x.id===reg.id);
+    if(r2){ delete r2.esperaGps; if(pos){ r2.lat=pos.lat; r2.lng=pos.lng; r2.acc=pos.acc; } lsSet(COLA_KEY,q2); }
+    if(pos){ const A=arrGet(); A.c[c.cod]={ts:ts,lat:pos.lat,lng:pos.lng}; arrSet(A); }
+    subirCola();
+  }
+  async function anularLlegada(c){
+    const ts=Date.now(), reg={id:"anulaLlegada-"+c.cod+"-"+ts,tipo:"anulaLlegada",cod:c.cod,nom:c.nom,zona:S.zonaSel,ts:ts,offline:false};
+    await enviarMarca(reg); const A=arrGet(); delete A.c[c.cod]; arrSet(A); pintarHoy();
+  }
+  setInterval(()=>{ document.querySelectorAll(".cron").forEach(e=>{ e.textContent=P_.fmtCron((Date.now()-Number(e.dataset.ts))/1000); }); },1000);
+
+  // ---------- Maps y salida ----------
+  const MARGEN_KEY="prueba_reparto_margen_v1";
+  function puntoMaps(c){ const h=S.horarios[c.cod]; return (h&&h.lat!=null&&h.lng!=null&&isFinite(h.lat)&&isFinite(h.lng))?(h.lat+","+h.lng):(c.dir+", "+c.loc+", Buenos Aires, Argentina"); }
+  function urlMaps(dest,orig,navegar){
+    let u="https://www.google.com/maps/dir/?api=1&travelmode=driving&destination="+encodeURIComponent(puntoMaps(dest));
+    if(orig) u+="&origin="+encodeURIComponent(puntoMaps(orig));
+    if(navegar) u+="&dir_action=navigate";
+    return u;
+  }
+  function linkMaps(txt,url,cls){ const a=el("a",cls||"btnlink",txt); a.href=url; a.target="_blank"; a.rel="noopener"; return a; }
+  function pendientesHoy(z){
+    const zp=planZona(z), ev=P_.eventos(S.marcas), ini=P_.inicioDia(Date.now()), por={}; z.clientes.forEach(c=>{ por[c.cod]=c; });
+    return zp.orden.map(cod=>por[cod]).filter(c=>{ if(!c) return false; const e=ev[c.cod]||[], last=e[e.length-1], v=P_.ultimaVisita(e); return !(v&&v.ts>=ini)&&!(last&&last.t==="c"&&last.ts>=ini); });
+  }
+  async function viajeOSRM(a,b){
+    const ctl=new AbortController(), t=setTimeout(()=>ctl.abort(),6000);
+    try{
+      const r=await fetch("https://router.project-osrm.org/route/v1/driving/"+a.lng+","+a.lat+";"+b.lng+","+b.lat+"?overview=false",{signal:ctl.signal});
+      const j=await r.json(); clearTimeout(t);
+      if(j&&j.routes&&j.routes[0]) return {min:j.routes[0].duration/60,km:j.routes[0].distance/1000};
+    }catch(e){ clearTimeout(t); }
+    return null;
+  }
+  async function calcularSalida(){
+    const z=zonaActual(), res=$("salidaRes"), b=$("bSalida"); if(!z) return;
+    const pend=pendientesHoy(z); if(!pend.length) return;
+    res.replaceChildren(); b.disabled=true; b.textContent="Leyendo ubicación…";
+    let pos; try{ pos=await leerGPS(); }catch(e){ nota(res,"err",msgGPS(e.tipo)); b.disabled=false; b.textContent="Calcular salida"; return; }
+    b.textContent="Calculando…";
+    const dest=pend[0], h=S.horarios[dest.cod], margen=Number(lsGet(MARGEN_KEY,15));
+    const turno=turnoActual(), apT=h?P_.apertura(h,turno):null, tieneH=apT!=null, abre=tieneH?apT:P_.TURNOS[turno].START, conLoc=!!(h&&h.lat!=null&&h.lng!=null&&isFinite(h.lat)&&isFinite(h.lng));
+    res.appendChild(el("div","empiezo","Primer cliente: "+dest.nom));
+    res.appendChild(el("div","addr",dest.dir+", "+dest.loc+" · "+(tieneH?(turno==="tarde"?"reabre ":"abre ")+P_.fmtMin(abre):"sin horario cargado: cuento desde las "+P_.fmtMin(abre))));
+    if(conLoc){
+      let v=await viajeOSRM(pos,{lat:h.lat,lng:h.lng}), estimado=false;
+      if(!v){ const dm=P_.distM(pos,{lat:h.lat,lng:h.lng}); v={min:P_.estimarMin(dm),km:dm/1000}; estimado=true; }
+      const sa=P_.calcularSalida({ahoraMin:minutosAhora(),abreMin:abre,durMin:v.min,margenMin:margen});
+      res.appendChild(el("div","motivo","Estás a "+v.km.toFixed(1)+" km · viaje de unos "+sa.viajeMin+" min sin tránsito"+(estimado?" (estimado, sin conexión al mapa)":"")+" + "+margen+" min de margen."));
+      res.appendChild(el("div","note "+(sa.yaDebioSalir?(sa.minutosTarde>0?"err":"pend"):"ok"),
+        "Salí a más tardar a las "+P_.fmtMin(Math.max(0,sa.salirMin))+"."+
+        (sa.yaDebioSalir?(sa.minutosTarde>0?" Si salís ahora llegás a las "+P_.fmtMin(sa.llegaSiSaleYaMin)+": "+sa.minutosTarde+" min después de que abre.":" Salí ya: llegás a tiempo a las "+P_.fmtMin(sa.llegaSiSaleYaMin)+"."):"")));
+    } else {
+      res.appendChild(el("div","note pend","Este cliente todavía no tiene ubicación guardada (se guarda en la primera visita), así que no puedo calcular el tiempo. Abrí Maps: ahí ves cuánto tarda con el tránsito de ahora."));
+    }
+    const lk=linkMaps("Abrir recorrido en Maps desde donde estoy (con tránsito)",urlMaps(dest,null,false),"go2"); const w=el("div","mini"); w.style.marginTop="10px"; w.appendChild(lk); res.appendChild(w);
+    b.disabled=false; b.textContent="Calcular salida";
+  }
+  $("bSalida").addEventListener("click",calcularSalida);
+  $("margen").value=String(lsGet(MARGEN_KEY,15));
+  $("margen").addEventListener("change",e=>{ lsSet(MARGEN_KEY,Number(e.target.value)); });
 
   function tarjetaHoy(c,o){
     const li=el("li","card"+(o.tipo==="hecho"?" hecho":""));
@@ -576,30 +782,40 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     const info=el("div","info"), nm=el("div","name",c.nom+"  ·  "+c.cod);
     const nb=/\(N\)/i.test(c.nom)?"Nuevo":(/\(2\)/.test(c.nom)?"Nuevo 2":"");
     if(nb){ nm.appendChild(document.createTextNode(" ")); nm.appendChild(el("span","tag gray",nb)); }
+    if(o.deAyer){ nm.appendChild(document.createTextNode(" ")); nm.appendChild(el("span","tag amber","De ayer")); }
     info.appendChild(nm); info.appendChild(el("div","addr",c.dir+", "+c.loc));
     const h=S.horarios[c.cod], hor=el("div","hor");
-    P_.etiquetas(h).forEach(t=>{ hor.appendChild(el("span","tag "+t.cls,t.txt)); hor.appendChild(document.createTextNode(" ")); });
+    P_.etiquetas(h,turnoActual()).forEach(t=>{ hor.appendChild(el("span","tag "+t.cls,t.txt)); hor.appendChild(document.createTextNode(" ")); });
     const es=P_.estadoAhora(h,minutosAhora());
     if(es&&o.tipo!=="hecho") hor.appendChild(el("span","tag "+(es.k==="abierto"?"green":(es.k==="cerrado"?"amber":"red")),es.txt));
     info.appendChild(hor);
     if(o.motivo) info.appendChild(el("div","motivo",o.motivo));
     if(o.atras) info.appendChild(el("div","motivo atras","Ya visitaste clientes más adelante: este quedó atrás."));
     if(o.tipo==="volver") info.appendChild(el("div","motivo","Estaba cerrado. Volvé a pasar antes de terminar."));
-    if(o.tipo==="hecho") info.appendChild(el("div","motivo","Visitado a las "+hhmm(o.ts)+"."));
+    if(o.tipo==="hecho") info.appendChild(el("div","motivo","Visitado a las "+hhmm(o.ts)+(o.seg!=null?" · estuvo "+P_.fmtDur(o.seg):" · sin tiempo medido")+(o.seg!=null&&o.seg<P_.CFG.CORTA_S?" ⚠ visita muy corta":"")+"."));
     ttl.appendChild(info); li.appendChild(ttl);
     const mapaLink=()=>{ const a=el("a","btnlink","Cómo llegar"); a.href="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(c.dir+", "+c.loc+", Buenos Aires"); a.target="_blank"; a.rel="noopener"; return a; };
     const mk=(box,txt,fn)=>{ const b=el("button",null,txt); b.addEventListener("click",fn); box.appendChild(b); return b; };
     if(o.tipo==="plan"||o.tipo==="volver"){
-      const row=el("div","cbtn"), bV=el("button","go","Visitado");
-      let bC=null;
+      const ar=llegadaDe(c.cod);
+      if(ar){
+        const t=el("div","motivo enneg"); t.appendChild(document.createTextNode("⏱ En el negocio desde las "+hhmm(ar.ts)+" · "));
+        const cr=el("span","cron",P_.fmtCron((Date.now()-ar.ts)/1000)); cr.dataset.ts=String(ar.ts); t.appendChild(cr); info.appendChild(t);
+      }
+      const conLlegue=!ar, row=el("div","cbtn"+(conLlegue?" tres":""));
+      let bC=null, bV;
+      if(conLlegue){ const bL=el("button","go","Llegué"); bL.addEventListener("click",()=>llegue(c)); row.appendChild(bL); bV=el("button",null,"Visitado"); }
+      else bV=el("button","go","Visitado");
       bV.addEventListener("click",()=>marcar(c,"visita",bV,bC));
       row.appendChild(bV);
       if(o.tipo==="plan"){ bC=el("button",null,"Cerrado"); bC.addEventListener("click",()=>marcar(c,"cerrado",bV,bC)); row.appendChild(bC); }
       else { const bU=el("button",null,"Deshacer cerrado"); bU.addEventListener("click",()=>deshacer(c)); row.appendChild(bU); }
       li.appendChild(row);
       const mini=el("div","mini");
+      if(ar) mk(mini,"Anular llegada",()=>anularLlegada(c));
       if(o.tipo==="plan"){ mk(mini,"↑",()=>mover(c.cod,-1,o.visibles)); mk(mini,"↓",()=>mover(c.cod,1,o.visibles)); }
       mk(mini,"Horario",()=>abrir(c)); mini.appendChild(mapaLink());
+      if(o.tipo==="plan"&&o.siguiente) mini.appendChild(linkMaps("Ir al siguiente ➜",urlMaps(o.siguiente,c,false)));
       if(o.tipo==="plan") mk(mini,"Empezar desde acá",()=>empezarDesde(c));
       li.appendChild(mini);
     } else {
@@ -624,19 +840,24 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     const off=i=>(((i-pi-1)%n)+n)%n;
     let maxOff=-1; hechos.forEach(h=>{ const r=porCod[h.c.cod]; if(r) maxOff=Math.max(maxOff,off(r.i)); });
 
-    if(S.tab==="tHoy"){ $("avance").textContent=hechos.length+" de "+K+" visitas hoy"; $("barra").style.width=Math.min(100,100*hechos.length/K)+"%"; pintarCola(); }
+    const turno=turnoActual(), hT=P_.hechosTurno(z.clientes,S.marcas,Date.now(),turno);
+    $("tMan").setAttribute("aria-pressed",String(turno==="manana")); $("tTar").setAttribute("aria-pressed",String(turno==="tarde"));
+    if(S.tab==="tHoy"){ $("avance").textContent=hT+" de "+K+" visitas ("+(turno==="tarde"?"tarde":"mañana")+")"; $("barra").style.width=Math.min(100,100*hT/K)+"%"; pintarCola(); }
     const chips=el("div","chips");
     [["Hechos",hechos.length],["Faltan",pend.length],["Volver a pasar",volver.length]].forEach(([t,v])=>{ const s=el("span","chip"); s.appendChild(el("b",null,String(v))); s.appendChild(document.createTextNode(" "+t)); chips.appendChild(s); });
     top.appendChild(chips);
     if(pend.length){
-      const p=pend[0], hp=S.horarios[p.cod];
-      top.appendChild(el("div","empiezo","Arrancá por: "+p.nom+(hp&&hp.abreM?" · estar ahí a las "+P_.fmtMin(P_.toMin(hp.abreM))+", cuando abre":"")));
+      const p=pend[0], hp=S.horarios[p.cod], bar=el("div","sigbar");
+      bar.appendChild(el("div","empiezo",(hT?"Siguiente: ":"Arrancá por: ")+p.nom+(!hT&&hp&&P_.apertura(hp,turno)!=null?" · estar ahí a las "+P_.fmtMin(P_.apertura(hp,turno))+", cuando abre":"")));
+      bar.appendChild(linkMaps("Ir ahora ➜ Maps",urlMaps(p,null,true),"go2"));
+      top.appendChild(bar);
       const sin=pend.filter(c=>!S.horarios[c.cod]).length;
       if(sin===pend.length) top.appendChild(el("div","note pend","Todavía no hay horarios cargados: el orden sigue el recorrido. Se va ordenando solo a medida que se cargan horarios (tocá Visitado y cargá el horario de cada negocio)."));
       else if(sin) top.appendChild(el("div","motivo",sin+" de "+pend.length+" sin horario: van en orden de recorrido."));
     }
     const visibles=pend.map(c=>c.cod);
-    pend.forEach((c,i)=>{ const r=porCod[c.cod]; lista.appendChild(tarjetaHoy(c,{tipo:"plan",pos:i+1,motivo:(zp.motivos||{})[c.cod],visibles:visibles,atras:maxOff>=0&&off(r.i)<maxOff-P_.CFG.VENTANA})); });
+    pend.forEach((c,i)=>{ const r=porCod[c.cod]; lista.appendChild(tarjetaHoy(c,{tipo:"plan",pos:i+1,motivo:(zp.motivos||{})[c.cod],visibles:visibles,siguiente:pend[i+1]||null,deAyer:!!(zp.deAyer&&zp.deAyer[c.cod]),atras:maxOff>=0&&off(r.i)<maxOff-P_.CFG.VENTANA})); });
+    $("hoySalida").classList.toggle("hidden",!pend.length);
     if(!pend.length){
       if(hechos.length||volver.length){
         fin.appendChild(el("div","note ok","Plan del día completo."+(volver.length?" Quedan "+volver.length+" cerrado(s) para volver a pasar.":"")));
@@ -646,7 +867,8 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
       }
     }
     volver.forEach(c=>lv.appendChild(tarjetaHoy(c,{tipo:"volver"})));
-    hechos.forEach(h=>lh.appendChild(tarjetaHoy(h.c,{tipo:"hecho",ts:h.ts})));
+    const durPorId={}; P_.duraciones(S.marcas,z.clientes).forEach(x=>{ durPorId[x.id]=x.seg; });
+    hechos.forEach(h=>lh.appendChild(tarjetaHoy(h.c,{tipo:"hecho",ts:h.ts,seg:durPorId[h.id]!=null?durPorId[h.id]:null})));
     $("nVolver").textContent=String(volver.length); $("nHechos").textContent=String(hechos.length);
     $("hoyVolver").classList.toggle("hidden",!volver.length); $("hoyHechos").classList.toggle("hidden",!hechos.length);
     $("hoyVolver").open=volver.length>0&&!pend.length;
@@ -662,8 +884,11 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   function avisoMarca(c,tipo,reg){
     const box=$("aviso"); box.replaceChildren();
     const d=el("div","note "+(reg.offline?"pend":"ok"));
-    d.appendChild(document.createTextNode((tipo==="visita"?"Visitado: ":"Cerrado: ")+c.nom+" ("+hhmm(reg.ts)+", GPS ±"+reg.acc+" m)."+(reg.offline?" Sin señal: se sube solo. ":" ")));
-    const b=el("button","mini1","Deshacer"); b.addEventListener("click",()=>deshacer(c)); d.appendChild(b); box.appendChild(d);
+    const sg=reg.llego?Math.round((reg.ts-reg.llego)/1000):null;
+    d.appendChild(document.createTextNode((tipo==="visita"?"Visitado: ":"Cerrado: ")+c.nom+" ("+hhmm(reg.ts)+", GPS ±"+reg.acc+" m)."+(sg!=null?" Estuviste "+P_.fmtDur(sg)+(tipo==="visita"&&sg<P_.CFG.CORTA_S?" ⚠ muy poco":"")+".":" Sin 'Llegué': no se midió el tiempo.")+(reg.offline?" Sin señal: se sube solo. ":" ")));
+    const b=el("button","mini1","Deshacer"); b.addEventListener("click",()=>deshacer(c)); d.appendChild(b);
+    if(tipo==="visita"){ const z=zonaActual(), sg=z?pendientesHoy(z)[0]:null; if(sg){ d.appendChild(document.createTextNode(" ")); d.appendChild(linkMaps("Ir al siguiente: "+sg.nom+" ➜",urlMaps(sg,null,true),"btnlink")); } }
+    box.appendChild(d);
     clearTimeout(S.tAviso); S.tAviso=setTimeout(()=>{ if(box.firstChild===d) box.replaceChildren(); },20000);
   }
   async function marcar(c,tipo,bV,bC){
@@ -674,7 +899,9 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     try{ pos=await leerGPS(); }
     catch(e){ nota($("aviso"),"err",msgGPS(e.tipo)); [bV,bC].forEach(x=>{ if(x) x.disabled=false; }); b.textContent=txt; S.ocupado=false; return; }
     const ts=Date.now(), reg={id:tipo+"-"+c.cod+"-"+ts,tipo:tipo,cod:c.cod,nom:c.nom,zona:S.zonaSel,lat:pos.lat,lng:pos.lng,acc:pos.acc,ts:ts,offline:false};
+    const ar=llegadaDe(c.cod); if(ar){ reg.llego=ar.ts; if(ar.lat!=null){ reg.llegoLat=ar.lat; reg.llegoLng=ar.lng; } }
     await enviarMarca(reg); S.ocupado=false;
+    if(ar){ const A=arrGet(); delete A.c[c.cod]; arrSet(A); }
     avisoMarca(c,tipo,reg); pintarHoy();
     if(tipo==="visita"&&!S.horarios[c.cod]){ abrir(c); nota($("dMsg"),"pend","Este cliente no tiene horario cargado. Cargalo ahora (si está cerrado o no podés, cancelá y lo cargás después)."); }
   }
@@ -682,11 +909,11 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     const ts=Date.now(), reg={id:"pendiente-"+c.cod+"-"+ts,tipo:"pendiente",cod:c.cod,nom:c.nom,zona:S.zonaSel,ts:ts,offline:false};
     await enviarMarca(reg);
     const z=zonaActual();
-    if(z){ const P=planDeHoy(), zp=P.zonas[z.id]; if(zp&&zp.orden.indexOf(c.cod)<0){ zp.orden.push(c.cod); lsSet(PLAN_KEY,P); } }
+    if(z){ const P=planDeHoy(), zp=P.zonas[kz(z)]; if(zp&&zp.orden.indexOf(c.cod)<0){ zp.orden.push(c.cod); lsSet(PLAN_KEY,P); } }
     $("aviso").replaceChildren(); pintarHoy();
   }
   function mover(cod,delta,visibles){
-    const z=zonaActual(); if(!z) return; const P=planDeHoy(), zp=P.zonas[z.id]; if(!zp) return;
+    const z=zonaActual(); if(!z) return; const P=planDeHoy(), zp=P.zonas[kz(z)]; if(!zp) return;
     zp.orden=P_.moverEnLista(zp.orden,cod,delta,visibles); zp.manual=true; lsSet(PLAN_KEY,P); pintarHoy();
   }
   async function empezarDesde(c){
@@ -696,13 +923,15 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
   function sumarMas(z,k){
     planZona(z);
-    const r=P_.armarPlan({ring:z.clientes,horarios:S.horarios,marcas:S.marcas,ahora:Date.now(),K:k,hechosHoy:0,sinHead:true});
-    const P=planDeHoy(), zp=P.zonas[z.id];
-    r.items.forEach(i=>{ if(zp.orden.indexOf(i.c.cod)<0){ zp.orden.push(i.c.cod); if(i.motivo) zp.motivos[i.c.cod]=i.motivo; } });
+    const r=P_.armarPlan({ring:z.clientes,horarios:S.horarios,marcas:S.marcas,ahora:Date.now(),K:k,hechosHoy:0,sinHead:true,sinArrastre:true,turno:turnoActual()});
+    const P=planDeHoy(), zp=P.zonas[kz(z)];
+    r.items.forEach(i=>{ if(zp.orden.indexOf(i.c.cod)<0){ zp.orden.push(i.c.cod); if(i.motivo) zp.motivos[i.c.cod]=i.motivo; if(i.deAyer){ zp.deAyer=zp.deAyer||{}; zp.deAyer[i.c.cod]=true; } } });
     lsSet(PLAN_KEY,P); pintarHoy();
   }
+  $("tMan").addEventListener("click",()=>setTurno("manana"));
+  $("tTar").addEventListener("click",()=>setTurno("tarde"));
   $("bRecalc").addEventListener("click",()=>{ const z=zonaActual(); if(!z||!confirm("Se vuelve a calcular el orden del día y se pierde el orden que acomodaste a mano. ¿Seguir?")) return; construirPlan(z); pintarHoy(); });
-  $("objK").addEventListener("change",e=>{ lsSet(OBJ_KEY,Number(e.target.value)); pintarHoy(); });
+  $("objK").addEventListener("change",e=>{ setObjetivo(Number(e.target.value)); pintarHoy(); });
 
   // ---------- CONTROL (administrador) ----------
   function fmtDMY(d){ return pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear(); }
@@ -732,14 +961,18 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     box.replaceChildren();
     const ms=d.marcas||[], vis=ms.filter(m=>m.tipo==="visita"), cer=ms.filter(m=>m.tipo==="cerrado"), hor=ms.filter(m=>m.tipo==="horario"||m.tipo==="manual");
     const lejos=ms.filter(m=>(m.tipo==="visita"||m.tipo==="cerrado"||m.tipo==="horario")&&m.dist!=null&&m.dist>DIST_LEJOS);
+    const corta=vis.filter(m=>m.seg!=null&&m.seg<P_.CFG.CORTA_S), sinMedir=vis.filter(m=>m.seg==null), movio=ms.filter(m=>m.dls!=null&&m.dls>P_.CFG.MOVIO_M);
     const chips=el("div","chips");
-    [["Visitas",vis.length],["Cerrados",cer.length],["Horarios",hor.length],["Lejos del negocio",lejos.length]].forEach(([t,v])=>{ const s=el("span","chip"+((t==="Lejos del negocio"&&v)?" alerta":"")); s.appendChild(el("b",null,String(v))); s.appendChild(document.createTextNode(" "+t)); chips.appendChild(s); });
+    [["Visitas",vis.length],["Cerrados",cer.length],["Horarios",hor.length],["Lejos del negocio",lejos.length],["Visitas muy cortas",corta.length]].forEach(([t,v])=>{ const s=el("span","chip"+(((t==="Lejos del negocio"||t==="Visitas muy cortas")&&v)?" alerta":"")); s.appendChild(el("b",null,String(v))); s.appendChild(document.createTextNode(" "+t)); chips.appendChild(s); });
     box.appendChild(chips);
     const mapa=el("div","mapa"); box.appendChild(mapa);
     const pts=ms.filter(m=>m.lat!=null&&m.lng!=null).map(m=>({lat:m.lat,lng:m.lng,txt:m.hora+" "+m.nom,color:(m.dist!=null&&m.dist>DIST_LEJOS)?"#D93025":(m.tipo==="cerrado"?"#E8A300":(m.tipo==="visita"?"#1E8E3E":"#1A73E8"))}));
     dibujarMapa(mapa,pts);
     if(pts.length) box.appendChild(el("div","addr","Verde: visita · Amarillo: cerrado · Azul: horario cargado · Rojo: marcado a más de "+DIST_LEJOS+" m del negocio."));
     seccion(box,"Marcadas lejos del negocio (más de "+DIST_LEJOS+" m)",lejos.map(m=>m.hora+" · "+m.nom+" ("+m.cod+") · "+m.tipo+" · a "+m.dist+" m"),"Ninguna.");
+    seccion(box,"Visitas muy cortas (menos de "+P_.fmtDur(P_.CFG.CORTA_S)+"): puede que no haya entrado",corta.map(m=>m.hora+" · "+m.nom+" ("+m.cod+") · estuvo "+P_.fmtDur(m.seg)),"Ninguna.");
+    seccion(box,"Se movieron entre la llegada y la salida (más de "+P_.CFG.MOVIO_M+" m)",movio.map(m=>m.hora+" · "+m.nom+" ("+m.cod+") · a "+m.dls+" m de donde marcó la llegada"),"Ninguna.");
+    if(sinMedir.length) seccion(box,"Visitas sin tiempo medido (no tocó 'Llegué')",[sinMedir.length+" de "+vis.length+" visitas: "+sinMedir.slice(0,8).map(m=>m.nom).join(", ")+(sinMedir.length>8?"…":"")]);
     const ini=new Date(f).setHours(0,0,0,0), fin=ini+86400000, ctl=[], sal=[], cerr=[];
     S.zonas.forEach(z=>{ const r=P_.controlDia(z.clientes,S.marcas,ini,fin), nom=c=>{ const x=z.clientes.find(k=>k.cod===c); return x?x.nom+" ("+c+")":c; };
       r.salteados.forEach(c=>sal.push(z.nombre+" · "+nom(c))); r.cerrados.forEach(c=>cerr.push(z.nombre+" · "+nom(c)));
@@ -749,11 +982,16 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     seccion(box,"Cambios del punto de partida (\"Empezar desde acá\")",ms.filter(m=>m.tipo==="inicio").map(m=>m.hora+" · "+m.zona+" · desde "+m.nom+" ("+m.cod+")"),"Ninguno.");
     const av=S.zonas.map(z=>{ const a=P_.avanceZona(z.clientes,S.marcas,Date.now()); return z.nombre+": "+a.visitados+" de "+a.total+" visitados en los últimos "+P_.CFG.DIAS_CICLO+" días"+(a.hoy?" · hoy "+a.hoy:""); });
     seccion(box,"Avance por zona",av);
+    const rz=S.zonas.map(z=>{ const r=P_.ritmo(z.clientes,S.marcas); if(!r.n) return null;
+      return z.nombre+": se queda "+r.visitaMin.toFixed(1)+" min en cada negocio"+(r.viajeMin!=null?" y tarda "+r.viajeMin.toFixed(1)+" min en llegar al siguiente":"")+(r.porJornada?" → entran unos "+r.porJornada.manana+" clientes por mañana (y "+r.porJornada.tarde+" por tarde)":"")+" · "+r.n+" visita(s) medidas"; }).filter(Boolean);
+    seccion(box,"Ritmo por zona (últimos 45 días)",rz,"Todavía no hay visitas con 'Llegué' para calcular el ritmo.");
+    const nombreDe={}; S.zonas.forEach(z=>z.clientes.forEach(c=>{ nombreDe[c.cod]=c.nom; }));
+    seccion(box,"Clientes que más demoran",P_.demoraPorCliente(S.marcas,S.zonas.reduce((a,z)=>a.concat(z.clientes),[])).slice(0,5).map(x=>(nombreDe[x.c]||x.c)+" ("+x.c+"): "+x.min.toFixed(1)+" min promedio · "+x.n+" visita(s)"),"Todavía sin datos.");
     const lst=el("div","sec"); lst.appendChild(el("h3",null,"Marcas del día ("+ms.length+")"));
     if(!ms.length) lst.appendChild(el("div","addr","Sin marcas este día."));
     ms.slice().sort((a,b)=>a.hora<b.hora?-1:1).forEach(m=>{
       const x=el("div","reg"); x.appendChild(el("b",null,m.hora+" · "+m.nom+" · "+m.cod));
-      x.appendChild(el("div",null,m.tipo+(m.zona?" · "+m.zona:"")+(m.offline?" · sin señal":"")));
+      x.appendChild(el("div",null,m.tipo+(m.zona?" · "+m.zona:"")+(m.offline?" · sin señal":"")+(m.seg!=null?" · estuvo "+P_.fmtDur(m.seg):"")));
       x.appendChild(el("div","addr",m.lat!=null?("GPS ±"+m.acc+" m"+(m.dist!=null?" · a "+m.dist+" m del negocio":" · sin ubicación de referencia")):"sin GPS"));
       if(m.mapa){ const a=el("a",null,"Ver en el mapa"); a.href=m.mapa; a.target="_blank"; a.rel="noopener"; x.appendChild(a); }
       lst.appendChild(x);
