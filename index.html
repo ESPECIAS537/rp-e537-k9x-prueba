@@ -83,7 +83,8 @@ a{color:var(--accent)}
 .reg{padding:10px 0;border-bottom:1px solid var(--line);font-size:15px}
 .reg b{font-size:16px}
 .hidden{display:none!important}
-.card{list-style:none;border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px;margin:0 0 10px}
+ol.cards{list-style:none;margin:0;padding:0}
+.card{display:block;list-style:none;overflow-wrap:anywhere;border:1px solid var(--line);background:var(--panel);border-radius:14px;padding:12px;margin:0 0 10px}
 .card.hecho{opacity:.85}
 .card .ttl{display:flex;gap:10px;align-items:flex-start}
 .pos2{font-size:24px;font-weight:700;color:var(--muted);min-width:34px;text-align:right;line-height:1.1;font-variant-numeric:tabular-nums}
@@ -96,19 +97,25 @@ a{color:var(--accent)}
 :root[data-theme="dark"] .tag.orange{background:#4A2C12;color:#FFB877}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tag.orange{background:#4A2C12;color:#FFB877}}
 .gemrow{margin-top:8px}.gemrow a,.gemrow button{width:100%}
+.gemrow button.go2,.salida button.go2{display:flex;justify-content:center;align-items:center;min-height:48px}
 .ubic{font-size:15px;font-weight:700;margin-top:4px}
 .ubic.ok{color:var(--ok)}.ubic.pend{color:var(--pend)}.ubic.err{color:var(--err)}
 .motivo{font-size:14px;color:var(--muted);margin-top:4px}
 .motivo.atras{color:var(--err);font-weight:700}
-.cbtn{display:grid;grid-template-columns:1.4fr 1fr;gap:8px;margin-top:10px}
+.cbtn{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}
+.cbtn button,.mini button,.mini .btnlink,.gemrow button{min-width:0;max-width:100%}
 button.go{background:var(--accent);border-color:var(--accent);color:#fff;min-height:54px;font-size:19px}
 :root[data-theme="dark"] button.go{color:#0d1a15}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) button.go{color:#0d1a15}}
-.mini{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.mini{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px}
+.mini>:only-child{grid-column:1/-1}
+.mini .btnlink{justify-content:center;text-align:center}
+details.mas{margin-top:8px}
+details.mas>summary{cursor:pointer;font-weight:700;color:var(--accent);min-height:36px;display:flex;align-items:center}
 .mini button,.btnlink,button.mini1{min-height:38px;padding:6px 10px;font-size:14px;font-weight:700}
 .btnlink{display:inline-flex;align-items:center;border:1px solid var(--line);border-radius:12px;text-decoration:none;background:var(--panel);color:var(--ink)}
-.cbtn.tres{grid-template-columns:1.2fr 1fr 1fr}
-.cbtn.tres button{padding:8px 4px;font-size:16px}
+.cbtn.tres{grid-template-columns:repeat(3,minmax(0,1fr))}
+.cbtn.tres button{padding:8px 2px;font-size:16px}
 .enneg{color:var(--ok);font-weight:700;font-size:16px}
 .turnos{display:flex;gap:6px;margin:0 0 8px}
 .turnos button{flex:1}
@@ -169,10 +176,10 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
       </div>
       <div id="salidaRes"></div>
     </div>
-    <ol class="list" id="hoyLista" style="padding:0"></ol>
+    <ol class="cards" id="hoyLista"></ol>
     <div id="hoyFin"></div>
-    <details class="det hidden" id="hoyVolver"><summary>Cerrados: volver a pasar (<span id="nVolver">0</span>)</summary><ol class="list" id="listaVolver" style="padding:0;margin-top:8px"></ol></details>
-    <details class="det hidden" id="hoyHechos"><summary>Visitados hoy (<span id="nHechos">0</span>)</summary><ol class="list" id="listaHechos" style="padding:0;margin-top:8px"></ol></details>
+    <details class="det hidden" id="hoyVolver"><summary>Cerrados: volver a pasar (<span id="nVolver">0</span>)</summary><ol class="cards" id="listaVolver" style="margin-top:8px"></ol></details>
+    <details class="det hidden" id="hoyHechos"><summary>Visitados hoy (<span id="nHechos">0</span>)</summary><ol class="cards" id="listaHechos" style="margin-top:8px"></ol></details>
     <div class="acc">
       <label>Objetivo del día
         <select id="objK"><option value="8">8</option><option value="10">10</option><option value="12">12</option><option value="15">15</option><option value="19">19</option><option value="22">22</option><option value="25">25</option></select>
@@ -196,6 +203,18 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
     <button id="bSalir">Salir de este celular</button>
   </section>
 </main>
+
+<dialog id="gemDlg">
+  <div class="dlg">
+    <h2>Pedido en Gemovil</h2>
+    <div class="addr" id="gemNom"></div>
+    <div id="gemCod" style="font-size:44px;font-weight:700;letter-spacing:3px;text-align:center;margin:10px 0;font-variant-numeric:tabular-nums"></div>
+    <div id="gemEstado"></div>
+    <div style="margin-top:12px"><button class="primary" id="bGemAbrir">Abrir Gemovil</button></div>
+    <p class="addr" style="margin:10px 0 0">Si se abre la ficha de Play Store, tocá <b>Abrir</b>. También podés cambiar a Gemovil con el botón de aplicaciones recientes: el código queda copiado.</p>
+    <div class="actions"><button id="bGemCerrar">Listo</button></div>
+  </div>
+</dialog>
 
 <dialog id="pinDlg">
   <div class="dlg">
@@ -586,7 +605,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="8 · PRUEBA";
+  const VER="9 · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -741,20 +760,35 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     abrir(c);
     nota($("dMsg"),"pend",msg||"Antes de seguir: preguntá el horario del negocio y cargalo. Si no te lo pueden decir, usá \"No pude averiguarlo\".");
   }
+  function copiarSync(texto){
+    let ok=false;
+    try{
+      const t=document.createElement("textarea"); t.value=texto; t.setAttribute("readonly","");
+      t.style.cssText="position:fixed;left:0;top:0;width:1px;height:1px;opacity:0";
+      document.body.appendChild(t); t.focus(); t.select(); t.setSelectionRange(0,texto.length);
+      ok=!!document.execCommand("copy"); t.remove();
+    }catch(e){}
+    return ok;
+  }
   async function copiarCodigo(c){
-    const cod=codigoGemovil(c); let ok=false;
-    try{ await navigator.clipboard.writeText(cod); ok=true; }catch(e){
-      try{ const t=document.createElement("textarea"); t.value=cod; document.body.appendChild(t); t.select(); ok=document.execCommand("copy"); t.remove(); }catch(e2){}
-    }
-    return {cod:cod,ok:ok};
+    const cod=codigoGemovil(c), ok1=copiarSync(cod);          // primero la vía sincrónica, dentro del mismo toque
+    let ok2=false; try{ await navigator.clipboard.writeText(cod); ok2=true; }catch(e){}
+    return {cod:cod,ok:ok1||ok2};
+  }
+  function abrirGemovil(){
+    irA("intent://#Intent;package="+GEMOVIL_PAQUETE+";S.browser_fallback_url="+encodeURIComponent("https://play.google.com/store/apps/details?id="+GEMOVIL_PAQUETE)+";end");
   }
   async function pedidoGemovil(c){
     if(!horarioOk(c)){ pedirHorario(c,"Para tomar el pedido primero cargá el horario del negocio (o usá \"No pude averiguarlo\")."); return; }
     const r=await copiarCodigo(c);
-    if(!GEMOVIL_PAQUETE){ nota($("aviso"),"pend",(r.ok?"Código "+r.cod+" copiado. ":"")+"Todavía falta configurar la app de Gemovil: abrila a mano y pegá el código."); return; }
-    nota($("aviso"),"ok",(r.ok?"Código "+r.cod+" copiado: pegalo en Gemovil. ":"")+"Abriendo Gemovil…");
-    irA("intent://#Intent;package="+GEMOVIL_PAQUETE+";S.browser_fallback_url="+encodeURIComponent("https://play.google.com/store/apps/details?id="+GEMOVIL_PAQUETE)+";end");
+    $("gemNom").textContent=c.nom; $("gemCod").textContent=r.cod;
+    $("gemEstado").className="note "+(r.ok?"ok":"err");
+    $("gemEstado").textContent=r.ok?"✔ Código copiado: pegalo en Gemovil para buscar al cliente.":"No se pudo copiar solo. El código es "+r.cod+": escribilo en Gemovil.";
+    $("bGemAbrir").classList.toggle("hidden",!GEMOVIL_PAQUETE);
+    $("gemDlg").showModal();
   }
+  $("bGemAbrir").addEventListener("click",()=>{ $("gemDlg").close(); abrirGemovil(); });
+  $("bGemCerrar").addEventListener("click",()=>$("gemDlg").close());
   async function pedirVisita(c,bV,bC){
     if(!horarioOk(c)){ S.tras={cod:c.cod}; pedirHorario(c,"Antes de marcar la visita: preguntá el horario y cargalo. Si no te lo pueden decir, usá \"No pude averiguarlo\"."); return; }
     marcar(c,"visita",bV,bC);
@@ -897,7 +931,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
       mk(mini,"Horario",()=>abrir(c)); mini.appendChild(mapaLink());
       if(o.tipo==="plan"&&o.siguiente) mini.appendChild(linkMaps("Ir al siguiente ➜",urlMaps(o.siguiente,c,false)));
       if(o.tipo==="plan") mk(mini,"Empezar desde acá",()=>empezarDesde(c));
-      li.appendChild(mini);
+      const mas=el("details","mas"); mas.appendChild(el("summary",null,"Más opciones")); mas.appendChild(mini); li.appendChild(mas);
     } else {
       const mini=el("div","mini"); mk(mini,"Deshacer",()=>deshacer(c)); mk(mini,"Horario",()=>abrir(c)); li.appendChild(mini);
     }
