@@ -92,6 +92,12 @@ a{color:var(--accent)}
 .tag.amber{background:var(--pend-bg);color:var(--pend)}
 .tag.red{background:var(--err-bg);color:var(--err)}
 .tag.gray{background:var(--line);color:var(--muted)}
+.tag.orange{background:#FCE3CC;color:#9A4300}
+:root[data-theme="dark"] .tag.orange{background:#4A2C12;color:#FFB877}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .tag.orange{background:#4A2C12;color:#FFB877}}
+.gemrow{margin-top:8px}.gemrow a,.gemrow button{width:100%}
+.ubic{font-size:15px;font-weight:700;margin-top:4px}
+.ubic.ok{color:var(--ok)}.ubic.pend{color:var(--pend)}.ubic.err{color:var(--err)}
 .motivo{font-size:14px;color:var(--muted);margin-top:4px}
 .motivo.atras{color:var(--err);font-weight:700}
 .cbtn{display:grid;grid-template-columns:1.4fr 1fr;gap:8px;margin-top:10px}
@@ -214,6 +220,11 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
       <div><label for="cierraN">Cierra a la noche</label><input type="text" id="cierraN" class="hora" inputmode="numeric" maxlength="5" placeholder="ej. 730" autocomplete="off"></div>
     </div>
     <div id="dMsg"></div>
+    <div id="skipBox" class="hidden" style="margin-top:12px;border-top:1px solid var(--line);padding-top:10px">
+      <label for="skipMotivo">¿No pudiste averiguar el horario?</label>
+      <select id="skipMotivo"><option value="">Elegí el motivo</option><option>Nadie supo decirme</option><option>No quisieron decirme</option><option>No había nadie que supiera</option><option>Otro motivo</option></select>
+      <div style="margin-top:8px"><button id="bSkip">No pude averiguarlo, seguir</button></div>
+    </div>
     <div class="actions"><button id="bCancel">Cancelar</button></div>
     <div style="margin-top:8px"><button class="primary" id="bGuardar">Guardar horario</button></div>
     <div id="bManualBox" class="hidden" style="margin-top:8px"><button id="bManual">Guardar sin ubicación (carga manual)</button></div>
@@ -225,7 +236,7 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
 <script>
 /* Lógica de "Hoy": estados de visita, punto de partida, orden sugerido y control. Sin pantalla: se puede probar sola. */
 window.RepartoPlan=(function(){
-  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, DIAS_ARRASTRE:3, CORTE_TURNO:840, CORTA_S:120, MOVIO_M:100, JORNADA:{manana:360,tarde:300}, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000};
+  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, DIAS_ARRASTRE:3, CORTE_TURNO:840, CORTA_S:120, MOVIO_M:100, COMPRA_VERDE:30, COMPRA_AMBAR:60, COMPRA_NARANJA:90, JORNADA:{manana:360,tarde:300}, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000};
 
   // ---------- turnos: mañana (hasta las 14) y tarde ----------
   // mañana: se visita desde que abren hasta que cierran al mediodía. tarde: desde que reabren hasta el cierre de la noche.
@@ -296,7 +307,7 @@ window.RepartoPlan=(function(){
   // Por cliente: lista de eventos (v=visitado, c=cerrado) en orden; "p" (deshacer) borra el último.
   function eventos(marcas){
     var por={}; dedupe(marcas).slice().sort(function(a,b){return a.ts-b.ts;}).forEach(function(m){
-      if(m.t==="i"||m.t==="l"||m.t==="x") return;
+      if(m.t==="i"||m.t==="l"||m.t==="x"||m.t==="h") return;
       var l=por[m.c]||(por[m.c]=[]);
       if(m.t==="p") l.pop(); else l.push(m);
     });
@@ -341,6 +352,25 @@ window.RepartoPlan=(function(){
       });
     }
     return out;
+  }
+
+  // ---------- última compra ----------
+  function parseFecha(s){
+    var m=/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(String(s==null?"":s).trim()); if(!m) return null;
+    var d=new Date(+m[3],+m[2]-1,+m[1],0,0,0,0); return isNaN(d.getTime())?null:d.getTime();
+  }
+  function diasDesde(fechaStr,ahora){ var t=parseFecha(fechaStr); if(t==null) return null; return Math.max(0,Math.floor((inicioDia(ahora)-t)/CFG.DIA_MS)); }
+  // Color y texto según hace cuánto compró: ≤30 verde, ≤60 ámbar, ≤90 naranja, más: rojo.
+  function prioridadCompra(fechaStr,ahora){
+    if(/^sin compras?$/i.test(String(fechaStr==null?"":fechaStr).trim())) return {cls:"gray",txt:"Todavía sin compras",dias:null};
+    var d=diasDesde(fechaStr,ahora); if(d==null) return null;
+    var cls=d<=CFG.COMPRA_VERDE?"green":(d<=CFG.COMPRA_AMBAR?"amber":(d<=CFG.COMPRA_NARANJA?"orange":"red"));
+    var txt=d===0?"Compró hoy":(d===1?"Compró ayer":"Última compra hace "+d+" días");
+    return {cls:cls,txt:txt+" ("+String(fechaStr).trim()+")",dias:d};
+  }
+  // "No pude averiguarlo el horario": vale para el día en que se marcó.
+  function sinHorarioDesde(marcas,cod,desde){
+    var r=null; dedupe(marcas).forEach(function(m){ if(m.t==="h"&&m.c===cod&&m.ts>=desde&&(!r||m.ts>r.ts)) r=m; }); return r;
   }
 
   // ---------- tiempo en el negocio ----------
@@ -511,7 +541,7 @@ window.RepartoPlan=(function(){
 
   return {CFG:CFG,toMin:toMin,fmtMin:fmtMin,apertura:apertura,cierre:cierre,abiertoEn:abiertoEn,estadoAhora:estadoAhora,etiquetas:etiquetas,distM:distM,
     dedupe:dedupe,inicioDia:inicioDia,eventos:eventos,ultimaVisita:ultimaVisita,estadoCliente:estadoCliente,indicePartida:indicePartida,
-    armarPlan:armarPlan,fmtDur:fmtDur,fmtCron:fmtCron,llegadaAbierta:llegadaAbierta,duraciones:duraciones,viajes:viajes,ritmo:ritmo,demoraPorCliente:demoraPorCliente,turnoAhora:turnoAhora,hechosTurno:hechosTurno,TURNOS:TURNOS,arrastre:arrastre,calcularSalida:calcularSalida,estimarMin:estimarMin,controlDia:controlDia,avanceZona:avanceZona,proyectar:proyectar,ajustarMapa:ajustarMapa,moverEnLista:moverEnLista};
+    armarPlan:armarPlan,parseFecha:parseFecha,diasDesde:diasDesde,prioridadCompra:prioridadCompra,sinHorarioDesde:sinHorarioDesde,fmtDur:fmtDur,fmtCron:fmtCron,llegadaAbierta:llegadaAbierta,duraciones:duraciones,viajes:viajes,ritmo:ritmo,demoraPorCliente:demoraPorCliente,turnoAhora:turnoAhora,hechosTurno:hechosTurno,TURNOS:TURNOS,arrastre:arrastre,calcularSalida:calcularSalida,estimarMin:estimarMin,controlDia:controlDia,avanceZona:avanceZona,proyectar:proyectar,ajustarMapa:ajustarMapa,moverEnLista:moverEnLista};
 })();
 
 </script>
@@ -521,7 +551,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
 // ====================================================================================
 (function(){
   const $ = id => document.getElementById(id);
-  const S = { zonas:[], zonaSel:null, horarios:{}, actual:null, rol:"", marcas:[], tab:"tHoy", ocupado:false };
+  const S = { zonas:[], zonaSel:null, horarios:{}, actual:null, rol:"", marcas:[], tab:"tHoy", ocupado:false, gpsEsp:{}, tras:null };
   const COLA_KEY="prueba_reparto_cola_v2", ZONA_KEY="prueba_reparto_zona_v1", DATOS_KEY="prueba_reparto_datos_v1", PIN_KEY="prueba_reparto_pin_v1", ROL_KEY="prueba_reparto_rol_v1";
   let PIN = lsGet(PIN_KEY,""); S.rol = lsGet(ROL_KEY,"");
   const configurado = URL_SCRIPT.indexOf("https://")===0;
@@ -556,7 +586,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="7 · PRUEBA";
+  const VER="8 · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -667,7 +697,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
   // ---------- HOY: plan del día, visitas y orden sugerido ----------
   const P_=window.RepartoPlan, PLAN_KEY="prueba_reparto_plan_v1", OBJ_KEY="prueba_reparto_obj_v1", DIST_LEJOS=150;
-  const CODIGO={visita:"v",cerrado:"c",pendiente:"p",inicio:"i",llegada:"l",anulaLlegada:"x"};
+  const CODIGO={visita:"v",cerrado:"c",pendiente:"p",inicio:"i",llegada:"l",anulaLlegada:"x",sinHorario:"h"};
   const TURNO_KEY="prueba_reparto_turno_v1";
   function turnoActual(){ const t=lsGet(TURNO_KEY,null); return (t&&t.fecha===fechaLocal()&&(t.t==="manana"||t.t==="tarde"))?t.t:P_.turnoAhora(Date.now()); }
   function setTurno(t){ lsSet(TURNO_KEY,{fecha:fechaLocal(),t:t}); pintarHoy(); }
@@ -700,6 +730,36 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
   function planZona(z){ const zp=planDeHoy().zonas[kz(z)]; return (zp&&zp.K===objetivo())?zp:construirPlan(z); }
 
+  // ---------- horario obligatorio y Gemovil ----------
+  const GEMOVIL_PAQUETE = "com.itnexo.gemovil";   // identificador de la app "Gemovil Go" en Android (Play Store).
+  const CODIGO_RELLENO = 4;     // largo del código al copiarlo para Gemovil (493 → 0493). Poner 0 para copiarlo tal cual.
+  const irA=u=>{ (window.__irA||(x=>{ window.location.href=x; }))(u); };
+  function codigoGemovil(c){ const t=String(c.cod); return CODIGO_RELLENO>0?t.padStart(CODIGO_RELLENO,"0"):t; }
+  function sinHorarioHoy(cod){ return P_.sinHorarioDesde(S.marcas,cod,P_.inicioDia(Date.now())); }
+  function horarioOk(c){ return !!S.horarios[c.cod]||!!sinHorarioHoy(c.cod); }
+  function pedirHorario(c,msg){
+    abrir(c);
+    nota($("dMsg"),"pend",msg||"Antes de seguir: preguntá el horario del negocio y cargalo. Si no te lo pueden decir, usá \"No pude averiguarlo\".");
+  }
+  async function copiarCodigo(c){
+    const cod=codigoGemovil(c); let ok=false;
+    try{ await navigator.clipboard.writeText(cod); ok=true; }catch(e){
+      try{ const t=document.createElement("textarea"); t.value=cod; document.body.appendChild(t); t.select(); ok=document.execCommand("copy"); t.remove(); }catch(e2){}
+    }
+    return {cod:cod,ok:ok};
+  }
+  async function pedidoGemovil(c){
+    if(!horarioOk(c)){ pedirHorario(c,"Para tomar el pedido primero cargá el horario del negocio (o usá \"No pude averiguarlo\")."); return; }
+    const r=await copiarCodigo(c);
+    if(!GEMOVIL_PAQUETE){ nota($("aviso"),"pend",(r.ok?"Código "+r.cod+" copiado. ":"")+"Todavía falta configurar la app de Gemovil: abrila a mano y pegá el código."); return; }
+    nota($("aviso"),"ok",(r.ok?"Código "+r.cod+" copiado: pegalo en Gemovil. ":"")+"Abriendo Gemovil…");
+    irA("intent://#Intent;package="+GEMOVIL_PAQUETE+";S.browser_fallback_url="+encodeURIComponent("https://play.google.com/store/apps/details?id="+GEMOVIL_PAQUETE)+";end");
+  }
+  async function pedirVisita(c,bV,bC){
+    if(!horarioOk(c)){ S.tras={cod:c.cod}; pedirHorario(c,"Antes de marcar la visita: preguntá el horario y cargalo. Si no te lo pueden decir, usá \"No pude averiguarlo\"."); return; }
+    marcar(c,"visita",bV,bC);
+  }
+
   // ---------- "Llegué": tiempo en el negocio ----------
   const ARR_KEY="prueba_reparto_llegadas_v1";
   function arrGet(){ const a=lsGet(ARR_KEY,null); return (a&&a.fecha===fechaLocal())?a:{fecha:fechaLocal(),c:{}}; }
@@ -713,11 +773,14 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     if(llegadaDe(c.cod)) return;
     const ts=Date.now(), reg={id:"llegada-"+c.cod+"-"+ts,tipo:"llegada",cod:c.cod,nom:c.nom,zona:S.zonaSel,ts:ts,offline:false,esperaGps:true};
     const q=cola(); q.push(reg); lsSet(COLA_KEY,q); nuevaMarca(reg); pintarCola(); pintarHoy();    // el reloj arranca ya, sin esperar al GPS
-    let pos=null; try{ pos=await leerGPS(12000); }catch(e){}
+    S.gpsEsp[c.cod]=true; pintarHoy();
+    let pos=null; try{ pos=await leerGPS(15000); }catch(e){}
+    delete S.gpsEsp[c.cod];
+    if(pos&&navigator.vibrate){ try{ navigator.vibrate([150,80,150]); }catch(e){} }     // avisa que la ubicación ya quedó tomada
     const q2=cola(), r2=q2.find(x=>x.id===reg.id);
     if(r2){ delete r2.esperaGps; if(pos){ r2.lat=pos.lat; r2.lng=pos.lng; r2.acc=pos.acc; } lsSet(COLA_KEY,q2); }
     if(pos){ const A=arrGet(); A.c[c.cod]={ts:ts,lat:pos.lat,lng:pos.lng}; arrSet(A); }
-    subirCola();
+    pintarHoy(); subirCola();
   }
   async function anularLlegada(c){
     const ts=Date.now(), reg={id:"anulaLlegada-"+c.cod+"-"+ts,tipo:"anulaLlegada",cod:c.cod,nom:c.nom,zona:S.zonaSel,ts:ts,offline:false};
@@ -793,6 +856,19 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     if(o.atras) info.appendChild(el("div","motivo atras","Ya visitaste clientes más adelante: este quedó atrás."));
     if(o.tipo==="volver") info.appendChild(el("div","motivo","Estaba cerrado. Volvé a pasar antes de terminar."));
     if(o.tipo==="hecho") info.appendChild(el("div","motivo","Visitado a las "+hhmm(o.ts)+(o.seg!=null?" · estuvo "+P_.fmtDur(o.seg):" · sin tiempo medido")+(o.seg!=null&&o.seg<P_.CFG.CORTA_S?" ⚠ visita muy corta":"")+"."));
+    // última compra (con color), esencias / salsas y notas
+    if(o.tipo!=="hecho"){
+      const pc=P_.prioridadCompra(c.ult,Date.now()), sx=(t,v)=>v==="SI"?el("span","tag green",t+": sí"):(v==="NO"?el("span","tag gray",t+": no"):null);
+      if(pc||c.ess||c.sal){
+        const v=el("div","hor");
+        if(pc){ v.appendChild(el("span","tag "+pc.cls,pc.txt)); v.appendChild(document.createTextNode(" ")); }
+        [sx("Esencias",c.ess),sx("Salsas",c.sal)].forEach(x=>{ if(x){ v.appendChild(x); v.appendChild(document.createTextNode(" ")); } });
+        info.appendChild(v);
+      }
+      if(c.obs) info.appendChild(el("div","motivo","Nota: "+c.obs));
+      if((o.tipo==="plan"||o.tipo==="volver")&&!horarioOk(c)) info.appendChild(el("div","motivo atras","Falta el horario: preguntalo y cargalo para poder marcar Visitado."));
+      else if(!S.horarios[c.cod]&&sinHorarioHoy(c.cod)) info.appendChild(el("div","motivo","Hoy no pudiste averiguar el horario: volvé a preguntarlo en la próxima visita."));
+    }
     ttl.appendChild(info); li.appendChild(ttl);
     const mapaLink=()=>{ const a=el("a","btnlink","Cómo llegar"); a.href="https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(c.dir+", "+c.loc+", Buenos Aires"); a.target="_blank"; a.rel="noopener"; return a; };
     const mk=(box,txt,fn)=>{ const b=el("button",null,txt); b.addEventListener("click",fn); box.appendChild(b); return b; };
@@ -801,18 +877,22 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
       if(ar){
         const t=el("div","motivo enneg"); t.appendChild(document.createTextNode("⏱ En el negocio desde las "+hhmm(ar.ts)+" · "));
         const cr=el("span","cron",P_.fmtCron((Date.now()-ar.ts)/1000)); cr.dataset.ts=String(ar.ts); t.appendChild(cr); info.appendChild(t);
+        const u=ar.lat!=null?["ok","📍 Ubicación tomada ✔"]:(S.gpsEsp[c.cod]?["pend","📍 Tomando la ubicación… esperá un momento antes de cambiar de app"]:["err","📍 No se pudo tomar la ubicación ahora (se toma igual al marcar Visitado)"]);
+        info.appendChild(el("div","ubic "+u[0],u[1]));
       }
       const conLlegue=!ar, row=el("div","cbtn"+(conLlegue?" tres":""));
       let bC=null, bV;
       if(conLlegue){ const bL=el("button","go","Llegué"); bL.addEventListener("click",()=>llegue(c)); row.appendChild(bL); bV=el("button",null,"Visitado"); }
       else bV=el("button","go","Visitado");
-      bV.addEventListener("click",()=>marcar(c,"visita",bV,bC));
+      bV.addEventListener("click",()=>pedirVisita(c,bV,bC));
       row.appendChild(bV);
       if(o.tipo==="plan"){ bC=el("button",null,"Cerrado"); bC.addEventListener("click",()=>marcar(c,"cerrado",bV,bC)); row.appendChild(bC); }
       else { const bU=el("button",null,"Deshacer cerrado"); bU.addEventListener("click",()=>deshacer(c)); row.appendChild(bU); }
       li.appendChild(row);
+      const gem=el("div","gemrow"), bG=el("button","go2","Pedido en Gemovil ➜"); bG.addEventListener("click",()=>pedidoGemovil(c)); gem.appendChild(bG); li.appendChild(gem);
       const mini=el("div","mini");
       if(ar) mk(mini,"Anular llegada",()=>anularLlegada(c));
+      mk(mini,"Copiar código",async()=>{ const r=await copiarCodigo(c); nota($("aviso"),r.ok?"ok":"err",r.ok?"Código copiado: "+r.cod:"No se pudo copiar. El código es "+r.cod); });
       if(o.tipo==="plan"){ mk(mini,"↑",()=>mover(c.cod,-1,o.visibles)); mk(mini,"↓",()=>mover(c.cod,1,o.visibles)); }
       mk(mini,"Horario",()=>abrir(c)); mini.appendChild(mapaLink());
       if(o.tipo==="plan"&&o.siguiente) mini.appendChild(linkMaps("Ir al siguiente ➜",urlMaps(o.siguiente,c,false)));
@@ -893,17 +973,16 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
   async function marcar(c,tipo,bV,bC){
     if(S.ocupado) return; S.ocupado=true;
-    const b=tipo==="visita"?bV:bC, txt=b.textContent;
-    [bV,bC].forEach(x=>{ if(x) x.disabled=true; }); b.textContent="Leyendo ubicación…";
+    const b=tipo==="visita"?bV:bC, txt=b?b.textContent:"";
+    [bV,bC].forEach(x=>{ if(x) x.disabled=true; }); if(b) b.textContent="Leyendo ubicación…";
     let pos;
     try{ pos=await leerGPS(); }
-    catch(e){ nota($("aviso"),"err",msgGPS(e.tipo)); [bV,bC].forEach(x=>{ if(x) x.disabled=false; }); b.textContent=txt; S.ocupado=false; return; }
+    catch(e){ nota($("aviso"),"err",msgGPS(e.tipo)); [bV,bC].forEach(x=>{ if(x) x.disabled=false; }); if(b) b.textContent=txt; S.ocupado=false; return; }
     const ts=Date.now(), reg={id:tipo+"-"+c.cod+"-"+ts,tipo:tipo,cod:c.cod,nom:c.nom,zona:S.zonaSel,lat:pos.lat,lng:pos.lng,acc:pos.acc,ts:ts,offline:false};
     const ar=llegadaDe(c.cod); if(ar){ reg.llego=ar.ts; if(ar.lat!=null){ reg.llegoLat=ar.lat; reg.llegoLng=ar.lng; } }
     await enviarMarca(reg); S.ocupado=false;
     if(ar){ const A=arrGet(); delete A.c[c.cod]; arrSet(A); }
     avisoMarca(c,tipo,reg); pintarHoy();
-    if(tipo==="visita"&&!S.horarios[c.cod]){ abrir(c); nota($("dMsg"),"pend","Este cliente no tiene horario cargado. Cargalo ahora (si está cerrado o no podés, cancelá y lo cargás después)."); }
   }
   async function deshacer(c){
     const ts=Date.now(), reg={id:"pendiente-"+c.cod+"-"+ts,tipo:"pendiente",cod:c.cod,nom:c.nom,zona:S.zonaSel,ts:ts,offline:false};
@@ -970,6 +1049,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     dibujarMapa(mapa,pts);
     if(pts.length) box.appendChild(el("div","addr","Verde: visita · Amarillo: cerrado · Azul: horario cargado · Rojo: marcado a más de "+DIST_LEJOS+" m del negocio."));
     seccion(box,"Marcadas lejos del negocio (más de "+DIST_LEJOS+" m)",lejos.map(m=>m.hora+" · "+m.nom+" ("+m.cod+") · "+m.tipo+" · a "+m.dist+" m"),"Ninguna.");
+    seccion(box,"No pudieron averiguar el horario (con el motivo)",ms.filter(m=>m.tipo==="sinHorario").map(m=>m.hora+" · "+m.nom+" ("+m.cod+") · "+(m.motivo||"sin motivo")),"Ninguno.");
     seccion(box,"Visitas muy cortas (menos de "+P_.fmtDur(P_.CFG.CORTA_S)+"): puede que no haya entrado",corta.map(m=>m.hora+" · "+m.nom+" ("+m.cod+") · estuvo "+P_.fmtDur(m.seg)),"Ninguna.");
     seccion(box,"Se movieron entre la llegada y la salida (más de "+P_.CFG.MOVIO_M+" m)",movio.map(m=>m.hora+" · "+m.nom+" ("+m.cod+") · a "+m.dls+" m de donde marcó la llegada"),"Ninguna.");
     if(sinMedir.length) seccion(box,"Visitas sin tiempo medido (no tocó 'Llegué')",[sinMedir.length+" de "+vis.length+" visitas: "+sinMedir.slice(0,8).map(m=>m.nom).join(", ")+(sinMedir.length>8?"…":"")]);
@@ -1013,9 +1093,19 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     $("corta").checked=h?!!h.corta:true;
     ["abreM","cierraM","abreT","cierraN"].forEach(k=>$(k).value=h&&h[k]?h[k]:"");
     syncCorta(); nota($("dMsg"),"",""); $("bGuardar").disabled=false; $("bGuardar").textContent="Guardar horario";
+    $("skipBox").classList.toggle("hidden",!!h); $("skipMotivo").value="";
     $("dlg").showModal();
   }
-  $("bCancel").addEventListener("click",()=>$("dlg").close());
+  $("bCancel").addEventListener("click",()=>{ S.tras=null; $("dlg").close(); });
+  $("bSkip").addEventListener("click",async()=>{
+    const c=S.actual, m=$("skipMotivo").value; if(!c) return;
+    if(!m){ nota($("dMsg"),"err","Elegí el motivo para poder seguir."); return; }
+    const ts=Date.now(), reg={id:"sinHorario-"+c.cod+"-"+ts,tipo:"sinHorario",cod:c.cod,nom:c.nom,zona:S.zonaSel,motivo:m,ts:ts,offline:false};
+    const tras=S.tras; S.tras=null;
+    await enviarMarca(reg); $("dlg").close(); pintarLista(); pintarHoy();
+    nota($("aviso"),"pend","Anotado: no pudiste averiguar el horario ("+m+"). Se te va a pedir de nuevo en la próxima visita.");
+    if(tras&&tras.cod===c.cod) marcar(c,"visita",null,null);
+  });
   function leerForm(){
     const corta=$("corta").checked, hs={}; let mala=false;
     ["abreM","cierraM","abreT","cierraN"].forEach(k=>{ const n=normHora($(k).value); if(n===null) mala=true; else { hs[k]=n; $(k).value=n; } });
@@ -1025,6 +1115,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     return h;
   }
   async function enviarYMostrar(c,h,reg,ts,detalle){
+    const tras=(reg.tipo==="horario"&&S.tras&&S.tras.cod===c.cod)?S.tras:null; if(tras) S.tras=null;
     let ok=false;
     if(configurado&&navigator.onLine){ try{ const r=await apiEnviar([reg]); ok=r.indexOf(reg.id)>=0; }catch(e){} }
     const prev=S.horarios[c.cod];
@@ -1032,6 +1123,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     else { reg.offline=true; const q=cola(); q.push(reg); lsSet(COLA_KEY,q); }
     $("dlg").close(); pintarLista(); pintarHoy();
     nota($("aviso"),ok?"ok":"pend",ok?"Guardado: "+c.nom+" ("+fFecha(ts)+detalle+").":"Sin señal: "+c.nom+" quedó guardado en el celular y se sube solo cuando vuelva la conexión.");
+    if(tras) marcar(c,"visita",null,null);      // venía de tocar Visitado: ahora sí se marca la visita
   }
   $("bGuardar").addEventListener("click",async()=>{
     const c=S.actual, h=leerForm(); if(!h) return;
