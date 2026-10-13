@@ -107,9 +107,10 @@ ol.cards{list-style:none;margin:0;padding:0}
 button.go{background:var(--accent);border-color:var(--accent);color:#fff;min-height:54px;font-size:19px}
 :root[data-theme="dark"] button.go{color:#0d1a15}
 @media (prefers-color-scheme: dark){:root:not([data-theme="light"]) button.go{color:#0d1a15}}
-.mini{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px}
+.mini{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin-top:8px}
+.card.hecho .mini{grid-template-columns:repeat(2,minmax(0,1fr))}
 .mini>:only-child{grid-column:1/-1}
-.mini .btnlink{justify-content:center;text-align:center}
+.mini button,.mini .btnlink{min-height:40px;padding:6px 4px;font-size:14px;line-height:1.15;white-space:normal;justify-content:center;text-align:center}
 details.mas{margin-top:8px}
 details.mas>summary{cursor:pointer;font-weight:700;color:var(--accent);min-height:36px;display:flex;align-items:center}
 .mini button,.btnlink,button.mini1{min-height:38px;padding:6px 10px;font-size:14px;font-weight:700}
@@ -282,8 +283,8 @@ window.RepartoPlan=(function(){
   function estadoAhora(h,min){
     var ab=abiertoEn(h,min); if(ab===null) return null;
     if(ab) return {k:"abierto",txt:"Abierto ahora"};
-    var aM=toMin(h.abreM); if(min<aM) return {k:"cerrado",txt:"Abre "+fmtMin(aM)};
-    if(h.corta){ var cM=toMin(h.cierraM), aT=toMin(h.abreT); if(min>=cM&&min<aT) return {k:"cerrado",txt:"Reabre "+fmtMin(aT)}; }
+    var aM=toMin(h.abreM); if(min<aM) return {k:"cerrado",txt:"Cerrado ahora"};
+    if(h.corta){ var cM=toMin(h.cierraM), aT=toMin(h.abreT); if(min>=cM&&min<aT) return {k:"cerrado",txt:"Cerrado ahora"}; }
     return {k:"cerro",txt:"Ya cerró"};
   }
   function etiquetas(h,turno){
@@ -605,7 +606,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="9 · PRUEBA";
+  const VER="10 · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -929,9 +930,9 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
       mk(mini,"Copiar código",async()=>{ const r=await copiarCodigo(c); nota($("aviso"),r.ok?"ok":"err",r.ok?"Código copiado: "+r.cod:"No se pudo copiar. El código es "+r.cod); });
       if(o.tipo==="plan"){ mk(mini,"↑",()=>mover(c.cod,-1,o.visibles)); mk(mini,"↓",()=>mover(c.cod,1,o.visibles)); }
       mk(mini,"Horario",()=>abrir(c)); mini.appendChild(mapaLink());
-      if(o.tipo==="plan"&&o.siguiente) mini.appendChild(linkMaps("Ir al siguiente ➜",urlMaps(o.siguiente,c,false)));
-      if(o.tipo==="plan") mk(mini,"Empezar desde acá",()=>empezarDesde(c));
-      const mas=el("details","mas"); mas.appendChild(el("summary",null,"Más opciones")); mas.appendChild(mini); li.appendChild(mas);
+      if(o.tipo==="plan"&&o.siguiente) mini.appendChild(linkMaps("Al siguiente ➜",urlMaps(o.siguiente,c,false)));
+      if(o.tipo==="plan") mk(mini,"Empezar acá",()=>empezarDesde(c));
+      li.appendChild(mini);
     } else {
       const mini=el("div","mini"); mk(mini,"Deshacer",()=>deshacer(c)); mk(mini,"Horario",()=>abrir(c)); li.appendChild(mini);
     }
