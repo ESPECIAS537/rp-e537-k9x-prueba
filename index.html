@@ -205,6 +205,18 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
   </section>
 </main>
 
+<dialog id="saltoDlg">
+  <div class="dlg">
+    <h2>Un momento</h2>
+    <p id="saltoTxt" style="font-size:17px;margin:8px 0 0"></p>
+    <p class="addr" style="margin:8px 0 0">Si lo visitás más tarde hoy, no va a quedar como salteado.</p>
+    <div class="actions" style="margin-top:14px">
+      <button id="bSaltoVolver">Volver atrás</button>
+      <button class="primary" id="bSaltoSeguir">Seguir igual</button>
+    </div>
+  </div>
+</dialog>
+
 <dialog id="gemDlg">
   <div class="dlg">
     <h2>Pedido en Gemovil</h2>
@@ -606,7 +618,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="10 · PRUEBA";
+  const VER="11 · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -806,6 +818,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
   async function llegue(c){
     if(llegadaDe(c.cod)) return;
+    if(!(await confirmarSalto(c))) return;
     const ts=Date.now(), reg={id:"llegada-"+c.cod+"-"+ts,tipo:"llegada",cod:c.cod,nom:c.nom,zona:S.zonaSel,ts:ts,offline:false,esperaGps:true};
     const q=cola(); q.push(reg); lsSet(COLA_KEY,q); nuevaMarca(reg); pintarCola(); pintarHoy();    // el reloj arranca ya, sin esperar al GPS
     S.gpsEsp[c.cod]=true; pintarHoy();
@@ -1006,8 +1019,41 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     box.appendChild(d);
     clearTimeout(S.tAviso); S.tAviso=setTimeout(()=>{ if(box.firstChild===d) box.replaceChildren(); },20000);
   }
+  function primerosDeLaLista(c){
+    const z=zonaActual(); if(!z) return [];
+    const zp=planZona(z); if(!zp||zp.orden.indexOf(c.cod)<0) return [];
+    const ev=P_.eventos(S.marcas), ini=P_.inicioDia(Date.now()), por={}; z.clientes.forEach(x=>{ por[x.cod]=x; });
+    const antes=[];
+    for(const cod of zp.orden){
+      if(cod===c.cod) break;
+      const e=ev[cod]||[], last=e[e.length-1], v=P_.ultimaVisita(e);
+      if(v&&v.ts>=ini) continue; if(last&&last.t==="c"&&last.ts>=ini) continue;
+      const x=por[cod]; if(x) antes.push(x);
+    }
+    return antes;
+  }
+  function nombresSalto(lista){
+    if(lista.length<=2) return lista.map(c=>c.nom).join(" y ");
+    return lista[0].nom+" y "+(lista.length-1)+" más";
+  }
+  function confirmarSalto(c){
+    const antes=primerosDeLaLista(c);
+    if(!antes.length) return Promise.resolve(true);
+    return new Promise(res=>{
+      $("saltoTxt").textContent="Te saltás a "+nombresSalto(antes)+". Van a figurar como no visitados.";
+      const dlg=$("saltoDlg"), bV2=$("bSaltoSeguir"), bA=$("bSaltoVolver");
+      const limpiar=()=>{ bV2.removeEventListener("click",onSeguir); bA.removeEventListener("click",onVolver); dlg.removeEventListener("close",onCerro); };
+      const onSeguir=()=>{ limpiar(); dlg.close(); res(true); };
+      const onVolver=()=>{ limpiar(); dlg.close(); res(false); };
+      const onCerro=()=>{ limpiar(); res(false); };   // si lo cierra con "atrás" del celular: no se guarda nada
+      bV2.addEventListener("click",onSeguir); bA.addEventListener("click",onVolver); dlg.addEventListener("close",onCerro);
+      dlg.showModal();
+    });
+  }
   async function marcar(c,tipo,bV,bC){
-    if(S.ocupado) return; S.ocupado=true;
+    if(S.ocupado) return;
+    if(!llegadaDe(c.cod)&&!(await confirmarSalto(c))) return;   // si ya confirmó el aviso al tocar "Llegué", no se repite
+    S.ocupado=true;
     const b=tipo==="visita"?bV:bC, txt=b?b.textContent:"";
     [bV,bC].forEach(x=>{ if(x) x.disabled=true; }); if(b) b.textContent="Leyendo ubicación…";
     let pos;
