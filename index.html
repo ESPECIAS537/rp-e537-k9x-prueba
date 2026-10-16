@@ -162,6 +162,9 @@ details.det summary{font-weight:700;cursor:pointer;min-height:36px;display:flex;
 .mapa .lienzo{position:absolute;left:0;top:0;width:640px;height:340px;transform-origin:0 0}
 .mapa img{position:absolute;width:256px;height:256px}
 .mapa .pt{position:absolute;width:14px;height:14px;margin:-7px 0 0 -7px;border-radius:50%;border:2px solid #fff;box-shadow:0 0 0 1px rgba(0,0,0,.45)}
+.mapa .pt.num{width:20px;height:20px;margin:-10px 0 0 -10px;color:#fff;font-size:11px;font-weight:700;text-align:center;line-height:16px}
+.enl{display:flex;gap:16px;flex-wrap:wrap;margin-top:6px}.enlace{font-size:14px;font-weight:700}
+.arr{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.arr .kj{margin:0}
 .mapa .attr{position:absolute;right:4px;bottom:2px;font-size:11px;background:rgba(255,255,255,.85);color:#333;padding:0 4px;border-radius:4px}
 input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;width:100%;padding:10px;border-radius:10px;border:1px solid var(--line);background:var(--bg);color:var(--ink);margin-top:8px}
 </style>
@@ -291,7 +294,7 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
 <script>
 /* Lógica de "Hoy": estados de visita, punto de partida, orden sugerido y control. Sin pantalla: se puede probar sola. */
 window.RepartoPlan=(function(){
-  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, DIAS_ARRASTRE:3, CORTE_TURNO:840, CORTA_S:120, MOVIO_M:100, COMPRA_VERDE:30, COMPRA_AMBAR:60, COMPRA_NARANJA:90, JORNADA:{manana:360,tarde:300}, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000};
+  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, DIAS_ARRASTRE:3, CORTE_TURNO:840, CORTA_S:120, MOVIO_M:100, COMPRA_VERDE:30, COMPRA_AMBAR:60, COMPRA_NARANJA:90, ARRANQUE_VERDE:510, ARRANQUE_AMBAR:540, JORNADA:{manana:360,tarde:300}, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000};
 
   // ---------- turnos: mañana (hasta las 14) y tarde ----------
   // mañana: se visita desde que abren hasta que cierran al mediodía. tarde: desde que reabren hasta el cierre de la noche.
@@ -466,19 +469,40 @@ window.RepartoPlan=(function(){
       });
     });
     res.salteados.sort(function(a,b){ return (a.estado==="Pendiente"?0:1)-(b.estado==="Pendiente"?0:1) || a.fecha-b.fecha; });
-    res.salteados.forEach(function(s){ res.revisar.push({tipo:"salteado",sev:"rojo",cliente:s.nom+" ("+s.cod+")",zona:s.zona,fecha:s.fecha,tag:"Salteado",detalle:(s.entre?"entre "+s.entre:""),extra:s.ult,cls:s.cls,estado:s.estado}); });
+    res.salteados.forEach(function(s){ res.revisar.push({tipo:"salteado",sev:"rojo",cod:s.cod,cliente:s.nom+" ("+s.cod+")",zona:s.zona,fecha:s.fecha,tag:"Salteado",detalle:(s.entre?"entre "+s.entre:""),extra:s.ult,cls:s.cls,estado:s.estado}); });
 
     // clientes de cada cuadro: un renglón por cliente y por día (si lo marcó dos veces el mismo día, queda la última)
     var porCod={}; zonas.forEach(function(z){ z.clientes.forEach(function(c){ porCod[String(c.cod)]={c:c,zona:z.nombre||z.id}; }); });
     var infoCompra=function(cod){ var r=porCod[String(cod)], pc=r?prioridadCompra(r.c.ult,ahora):null; return pc?{ult:pc.txt,cls:pc.cls}:{ult:"",cls:""}; };
     var unicos=function(arr){ var m={}; arr.slice().sort(function(a,b){ return (a.d0-b.d0)||(minHora(a.hora)-minHora(b.hora)); }).forEach(function(x){ m[x.d0+"|"+x.cod]=x; }); return Object.keys(m).map(function(k){return m[k];}).sort(function(a,b){ return (a.d0-b.d0)||(minHora(a.hora)-minHora(b.hora)); }); };
-    res.listaVisitados=unicos(vis).map(function(m){ var i=infoCompra(m.cod); return {fecha:m.d0,hora:m.hora,cod:String(m.cod),nom:m.nom,zona:m.zona,seg:m.seg,estado:"visita",tag:"Visitado",sev:"ok",ult:i.ult,cls:i.cls}; });
-    res.listaCerrados=unicos(cer).map(function(m){ var lv=ultimaVisita(evAll[String(m.cod)]||[]), volvio=!!(lv&&lv.ts>m.ts), i=infoCompra(m.cod); return {fecha:m.d0,hora:m.hora,cod:String(m.cod),nom:m.nom,zona:m.zona,seg:null,estado:"cerrado",tag:"Cerrado",sev:volvio?"ok":"ambar",extra:volvio?"volvió a pasar":"todavía sin volver a pasar",ult:i.ult,cls:i.cls}; });
+    res.listaVisitados=unicos(vis).map(function(m){ var i=infoCompra(m.cod); return {fecha:m.d0,hora:m.hora,cod:String(m.cod),nom:m.nom,zona:m.zona,seg:m.seg,estado:"visita",tag:"Visitado",sev:"ok",ult:i.ult,cls:i.cls,mapa:m.mapa||"",lat:m.lat,lng:m.lng}; });
+    res.listaCerrados=unicos(cer).map(function(m){ var lv=ultimaVisita(evAll[String(m.cod)]||[]), volvio=!!(lv&&lv.ts>m.ts), i=infoCompra(m.cod); return {fecha:m.d0,hora:m.hora,cod:String(m.cod),nom:m.nom,zona:m.zona,seg:null,estado:"cerrado",tag:"Cerrado",sev:volvio?"ok":"ambar",extra:volvio?"volvió a pasar":"todavía sin volver a pasar",ult:i.ult,cls:i.cls,mapa:m.mapa||"",lat:m.lat,lng:m.lng}; });
     // todos los clientes del período, en orden de hora; los salteados (que no tienen hora) al final
     res.clientes=res.listaVisitados.concat(res.listaCerrados).sort(function(a,b){ return (a.fecha-b.fecha)||(minHora(a.hora)-minHora(b.hora)); }).concat(res.salteados.map(function(sl){ return {fecha:sl.fecha,hora:"",cod:sl.cod,nom:sl.nom,zona:sl.zona,seg:null,estado:"salteado",tag:"Salteado",sev:"rojo",extra:sl.estado==="Pendiente"?"sigue pendiente":"visitado después",ult:sl.ult,cls:sl.cls}; }));
 
+    // horario de arranque y de fin de cada día y de cada zona: la primera y la última marca del día, sin importar con qué cliente
+    var claseArr=function(min){ return min<=CFG.ARRANQUE_VERDE?"ok":(min<=CFG.ARRANQUE_AMBAR?"pend":"err"); };
+    res.dias=diasTrab.map(function(d){
+      var mk=porDia[d].filter(function(m){return m.tipo==="llegada"||m.tipo==="visita"||m.tipo==="cerrado";});
+      if(!mk.length) return null;
+      var porZ={}, a=Infinity, f=-Infinity, nv=0;
+      mk.forEach(function(m){
+        var h=minHora(m.hora), l=m.tipo!=="llegada"?minHora(m.llegada):null, ini=(l!=null&&l<=h)?l:h;
+        if(ini<a) a=ini; if(h>f) f=h; if(m.tipo==="visita") nv++;
+        var z=porZ[m.zona]=porZ[m.zona]||{zona:m.zona,a:ini,f:h,n:0};
+        if(ini<z.a) z.a=ini; if(h>z.f) z.f=h; if(m.tipo==="visita") z.n++;
+      });
+      return {fecha:d,arranque:a,fin:f,hArranque:fmtHM(a),hFin:fmtHM(f),clase:claseArr(a),minutos:Math.round(f-a),visitas:nv,
+        zonas:Object.keys(porZ).map(function(k){ var z=porZ[k]; return {zona:z.zona,hArranque:fmtHM(z.a),hFin:fmtHM(z.f),clase:claseArr(z.a),visitas:z.n}; })};
+    }).filter(Boolean);
+    var arrs=res.dias.map(function(x){return x.arranque;});
+    res.arranquePromedio=arrs.length?{hora:fmtHM(promedio(arrs)),clase:claseArr(promedio(arrs))}:null;
+    // recorrido: las visitas y los cerrados que tienen ubicación, en el orden en que se hicieron
+    res.ruta=cm.filter(function(m){return (m.tipo==="visita"||m.tipo==="cerrado")&&m.lat!=null&&m.lng!=null;}).sort(function(a,b){ return (a.ts||0)-(b.ts||0); })
+      .map(function(m,i){ return {n:i+1,lat:m.lat,lng:m.lng,hora:m.hora,nom:m.nom,cod:String(m.cod),tipo:m.tipo,dist:m.dist}; });
+
     // alertas
-    var add=function(m,tipo,tag,detalle,sev){ res.revisar.push({tipo:tipo,sev:sev||"ambar",cliente:m.nom+" ("+m.cod+")",zona:m.zona,fecha:m.d0,hora:m.hora,tag:tag,detalle:detalle,extra:"",cls:"",estado:""}); };
+    var add=function(m,tipo,tag,detalle,sev){ res.revisar.push({tipo:tipo,sev:sev||"ambar",cod:String(m.cod),cliente:m.nom+" ("+m.cod+")",zona:m.zona,fecha:m.d0,hora:m.hora,tag:tag,detalle:detalle,extra:"",cls:"",estado:""}); };
     cm.forEach(function(m){ if((m.tipo==="visita"||m.tipo==="cerrado"||m.tipo==="horario")&&m.dist!=null&&m.dist>distLejos) add(m,"lejos","Lejos del negocio",m.hora+" · marcó a "+m.dist+" m"); });
     cm.forEach(function(m){ if(m.dls!=null&&m.dls>CFG.MOVIO_M) add(m,"movio","Se movió",m.hora+" · a "+m.dls+" m de donde marcó la llegada"); });
     vis.forEach(function(m){ if(m.seg!=null&&m.seg<CFG.CORTA_S) add(m,"corta","Visita muy corta",m.hora+" · estuvo "+fmtDur(m.seg)); });
@@ -778,7 +802,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="12e · PRUEBA";
+  const VER="12f · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -1311,7 +1335,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
 
   // ---------- CONTROL (administrador) ----------
   function fmtDMY(d){ return pad(d.getDate())+"/"+pad(d.getMonth()+1)+"/"+d.getFullYear(); }
-  function dibujarMapa(box,pts){
+  function dibujarMapa(box,pts,linea){
     box.replaceChildren(); if(!pts.length){ box.classList.add("hidden"); return; } box.classList.remove("hidden");
     const W=640,H=340, m=P_.ajustarMapa(pts,W,H,30), lienzo=el("div","lienzo"), x0=m.cx-W/2, y0=m.cy-H/2, z=m.z, max=Math.pow(2,z);
     for(let tx=Math.floor(x0/256);tx<=Math.floor((x0+W)/256);tx++) for(let ty=Math.floor(y0/256);ty<=Math.floor((y0+H)/256);ty++){
@@ -1319,7 +1343,13 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
       const img=document.createElement("img"); img.alt=""; img.src="https://tile.openstreetmap.org/"+z+"/"+(((tx%max)+max)%max)+"/"+ty+".png";
       img.style.left=(tx*256-x0)+"px"; img.style.top=(ty*256-y0)+"px"; lienzo.appendChild(img);
     }
-    pts.forEach(p=>{ const q=P_.proyectar(p.lat,p.lng,z), d=el("div","pt"); d.style.left=(q.x-x0)+"px"; d.style.top=(q.y-y0)+"px"; d.style.background=p.color; d.title=p.txt; lienzo.appendChild(d); });
+    if(linea){ const ruta=pts.filter(p=>p.n).sort((a,b)=>a.n-b.n);
+      if(ruta.length>1){ const NS="http://www.w3.org/2000/svg", sv=document.createElementNS(NS,"svg"), pl=document.createElementNS(NS,"polyline");
+        sv.setAttribute("width",W); sv.setAttribute("height",H); sv.style.cssText="position:absolute;left:0;top:0;pointer-events:none";
+        pl.setAttribute("points",ruta.map(p=>{ const q=P_.proyectar(p.lat,p.lng,z); return (q.x-x0)+","+(q.y-y0); }).join(" "));
+        pl.setAttribute("fill","none"); pl.setAttribute("stroke","#1A73E8"); pl.setAttribute("stroke-width","3"); pl.setAttribute("stroke-opacity","0.85");
+        sv.appendChild(pl); lienzo.appendChild(sv); } }
+    pts.forEach(p=>{ const q=P_.proyectar(p.lat,p.lng,z), d=el("div","pt"+(p.n?" num":"")); d.style.left=(q.x-x0)+"px"; d.style.top=(q.y-y0)+"px"; d.style.background=p.color; d.title=p.txt; if(p.n) d.textContent=String(p.n); lienzo.appendChild(d); });
     box.appendChild(lienzo); box.appendChild(el("div","attr","© OpenStreetMap"));
     const k=box.clientWidth/W; lienzo.style.transform="scale("+(k>0?k:1)+")";
   }
@@ -1352,7 +1382,17 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     t.appendChild(el("b",null,x.cliente)); t.appendChild(el("span","pilla "+x.sev,x.tag)); d.appendChild(t);
     d.appendChild(el("div","addr",(conFecha&&x.fecha?fmtDMY(new Date(x.fecha)).slice(0,5)+" · ":"")+x.zona+(x.detalle?" · "+x.detalle:"")));
     if(x.tipo==="salteado"){ const l=el("div","revx"); if(x.extra) l.appendChild(el("span","tag "+(x.cls||"gray"),x.extra)); l.appendChild(document.createTextNode(" "+(x.estado==="Pendiente"?"· sigue pendiente":"· visitado después"))); d.appendChild(l); }
+    if(x.cod){ const en=enlaces({cod:x.cod}); if(en) d.appendChild(en); }
     return d;
+  }
+  const urlPunto=(lat,lng)=>"https://www.google.com/maps/search/?api=1&query="+lat+","+lng;
+  const urlNegocio=cod=>{ const h=S.horarios[cod]; return (h&&h.lat!=null&&h.lng!=null)?urlPunto(h.lat,h.lng):""; };
+  // "Ver dónde marcó" (donde estaba Pablo al marcar) y "Ver negocio" (la ubicación fija del negocio, si ya está cargada)
+  function enlaces(x){
+    const e=el("div","enl");
+    if(x.mapa&&String(x.mapa).indexOf("http")===0) e.appendChild(linkMaps("Ver dónde marcó",x.mapa,"enlace"));
+    const n=urlNegocio(x.cod); if(n) e.appendChild(linkMaps("Ver negocio",n,"enlace"));
+    return e.children.length?e:null;
   }
   function filaCliente(x,conFecha){
     const d=el("div","rev "+(x.sev||"gris")), t=el("div","revt");
@@ -1362,6 +1402,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     if(x.extra) partes.push(x.extra);
     d.appendChild(el("div","addr",partes.join(" · ")));
     if(x.ult){ const l=el("div","revx"); l.appendChild(el("span","tag "+(x.cls||"gray"),x.ult)); d.appendChild(l); }
+    const en=enlaces(x); if(en) d.appendChild(en);
     return d;
   }
   function plegable(titulo,hijos,alAbrir){
@@ -1406,6 +1447,35 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
       S.ctlLista=(S.ctlLista===b.dataset.k)?"":b.dataset.k; pintarPanel();
     });
     pintarPanel();
+
+    // 1b) horario de arranque: lo primero que se mira
+    { const PILLA={ok:"ok",pend:"ambar",err:"rojo"}, FM=P_.fmtMin;
+      const leyenda="Cuenta la primera marca del día (Llegué, Visitado o Cerrado), sea cual sea el cliente. Verde: hasta "+FM(P_.CFG.ARRANQUE_VERDE)+" · Amarillo: hasta "+FM(P_.CFG.ARRANQUE_AMBAR)+" · Rojo: después.";
+      const cd=el("div","card2"); cd.id="cArranque";
+      if(dia){
+        cd.appendChild(el("div","kl","Arranque de la zona"));
+        const D=R.dias[0];
+        if(!D) cd.appendChild(el("div","kj","Sin visitas este día"));
+        else {
+          const f=el("div","arr"); f.appendChild(el("div","kj","Arrancó a las "+D.hArranque)); f.appendChild(el("span","pilla "+PILLA[D.clase],D.clase==="ok"?"A horario":(D.clase==="pend"?"Un poco tarde":"Tarde"))); cd.appendChild(f);
+          cd.appendChild(el("div","addr","Terminó a las "+D.hFin+" · "+P_.fmtDur(D.minutos*60)+" de jornada · "+D.visitas+" visita"+(D.visitas===1?"":"s")));
+          if(D.zonas.length>1) D.zonas.forEach(z=>cd.appendChild(el("div","addr",z.zona+": de "+z.hArranque+" a "+z.hFin+" · "+z.visitas+" visita"+(z.visitas===1?"":"s"))));
+          cd.appendChild(el("div","addr",leyenda));
+        }
+      } else {
+        const t=el("div","arr"); t.appendChild(el("span","kl","Arranque de cada día"));
+        if(R.arranquePromedio){ t.appendChild(el("b",null,"promedio "+R.arranquePromedio.hora)); t.appendChild(el("span","pilla "+PILLA[R.arranquePromedio.clase],"")); }
+        cd.appendChild(t);
+        if(!R.dias.length) cd.appendChild(el("div","addr","Sin visitas en este período."));
+        const DS=["dom","lun","mar","mié","jue","vie","sáb"];
+        R.dias.forEach(D=>{ const f=el("div","zfila"), dd=new Date(D.fecha);
+          f.appendChild(el("span",null,DS[dd.getDay()]+" "+fmtDMY(dd).slice(0,5)));
+          const dr=el("span","addr"); dr.appendChild(document.createTextNode("arrancó "+D.hArranque+" "));
+          dr.appendChild(el("span","pilla "+PILLA[D.clase],D.hArranque)); dr.appendChild(document.createTextNode(" · terminó "+D.hFin+" · "+D.visitas+" visita"+(D.visitas===1?"":"s")+(D.zonas.length?" · "+D.zonas.map(z=>z.zona).join(", "):"")));
+          f.appendChild(dr); cd.appendChild(f); });
+        cd.appendChild(el("div","addr",leyenda));
+      }
+      box.appendChild(cd); }
 
     // 2) para revisar
     const sec=el("div","sec"); sec.appendChild(el("h3",null,"Para revisar"));
@@ -1452,9 +1522,13 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
         lst.appendChild(x);
       });
       box.appendChild(plegable("Ver las marcas del día ("+ms.length+")",[lst]));
-      const pts=ms.filter(m=>m.lat!=null&&m.lng!=null).map(m=>({lat:m.lat,lng:m.lng,txt:m.hora+" "+m.nom,color:(m.dist!=null&&m.dist>DIST_LEJOS)?"#D93025":(m.tipo==="cerrado"?"#E8A300":(m.tipo==="visita"?"#1B873F":"#1A73E8"))}));
-      if(pts.length){ const mapa=el("div","mapa"); const nota=el("div","addr","Verde: visita · Amarillo: cerrado · Azul: horario cargado · Rojo: marcado a más de "+DIST_LEJOS+" m del negocio.");
-        box.appendChild(plegable("Mapa del día",[mapa,nota],()=>dibujarMapa(mapa,pts))); }
+      const col=m=>(m.dist!=null&&m.dist>DIST_LEJOS)?"#D93025":(m.tipo==="cerrado"?"#E8A300":"#1B873F");
+      const pts=ms.filter(m=>m.tipo==="horario"&&m.lat!=null&&m.lng!=null).map(m=>({lat:m.lat,lng:m.lng,txt:m.hora+" "+m.nom+" (horario)",color:"#1A73E8"}))
+        .concat(R.ruta.map(x=>({lat:x.lat,lng:x.lng,txt:x.hora+" "+x.nom,color:col(x),n:x.n})));
+      if(pts.length){ const mapa=el("div","mapa"); const hijos=[mapa];
+        hijos.push(el("div","addr","La línea azul une las visitas en el orden en que se hicieron; el número es el orden. Verde: visita · Amarillo: cerrado · Rojo: marcado a más de "+DIST_LEJOS+" m del negocio · Azul sin número: horario cargado."));
+        if(R.ruta.length>1){ const paradas=R.ruta.slice(0,25).map(x=>x.lat+","+x.lng).join("/"); const e=el("div","enl"); e.appendChild(linkMaps("Abrir el recorrido en Google Maps"+(R.ruta.length>25?" (primeras 25 paradas)":""),"https://www.google.com/maps/dir/"+paradas,"enlace")); hijos.push(e); }
+        box.appendChild(plegable("Mapa del día y recorrido",hijos,()=>dibujarMapa(mapa,pts,true))); }
     }
     const ex=el("div");
     const av=S.zonas.map(z=>{ const a=P_.avanceZona(z.clientes,S.marcas,Date.now()); return z.nombre+": "+a.visitados+" de "+a.total+" visitados en los últimos "+P_.CFG.DIAS_CICLO+" días"+(a.hoy?" · hoy "+a.hoy:""); });
