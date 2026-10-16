@@ -133,6 +133,10 @@ a.go2,button.go2{display:inline-flex;align-items:center;justify-content:center;m
 .kpi{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:12px}.kpi .kl{font-size:14px;color:var(--muted)}.kpi .kv{font-size:28px;font-weight:700}
 .kpi.err{background:var(--err-bg);border-color:var(--err)}.kpi.err .kl,.kpi.err .kv{color:var(--err)}
 .kpi.pend{background:var(--pend-bg);border-color:var(--pend)}.kpi.pend .kl,.kpi.pend .kv{color:var(--pend)}
+ button.kpi{display:block;width:100%;text-align:left;min-height:0;font-weight:400}
+button.kpi .kv{font-weight:700}.kpi .ks{font-size:12px;margin-top:2px;opacity:.8}
+.kpi[aria-expanded="true"]{outline:3px solid var(--accent)}
+.rev.ok{border-left-color:var(--ok)}.pilla.ok{background:var(--ok-bg);color:var(--ok)}
 .rev{background:var(--panel);border:1px solid var(--line);border-left:5px solid var(--line);border-radius:12px;padding:10px 12px;margin:0 0 8px}
 .rev.rojo{border-left-color:var(--err)}.rev.ambar{border-left-color:var(--pend)}.rev.gris{border-left-color:var(--muted)}
 .revt{display:flex;justify-content:space-between;align-items:center;gap:8px}.revx{margin-top:4px;font-size:14px}
@@ -464,6 +468,15 @@ window.RepartoPlan=(function(){
     res.salteados.sort(function(a,b){ return (a.estado==="Pendiente"?0:1)-(b.estado==="Pendiente"?0:1) || a.fecha-b.fecha; });
     res.salteados.forEach(function(s){ res.revisar.push({tipo:"salteado",sev:"rojo",cliente:s.nom+" ("+s.cod+")",zona:s.zona,fecha:s.fecha,tag:"Salteado",detalle:(s.entre?"entre "+s.entre:""),extra:s.ult,cls:s.cls,estado:s.estado}); });
 
+    // clientes de cada cuadro: un renglón por cliente y por día (si lo marcó dos veces el mismo día, queda la última)
+    var porCod={}; zonas.forEach(function(z){ z.clientes.forEach(function(c){ porCod[String(c.cod)]={c:c,zona:z.nombre||z.id}; }); });
+    var infoCompra=function(cod){ var r=porCod[String(cod)], pc=r?prioridadCompra(r.c.ult,ahora):null; return pc?{ult:pc.txt,cls:pc.cls}:{ult:"",cls:""}; };
+    var unicos=function(arr){ var m={}; arr.slice().sort(function(a,b){ return (a.d0-b.d0)||(minHora(a.hora)-minHora(b.hora)); }).forEach(function(x){ m[x.d0+"|"+x.cod]=x; }); return Object.keys(m).map(function(k){return m[k];}).sort(function(a,b){ return (a.d0-b.d0)||(minHora(a.hora)-minHora(b.hora)); }); };
+    res.listaVisitados=unicos(vis).map(function(m){ var i=infoCompra(m.cod); return {fecha:m.d0,hora:m.hora,cod:String(m.cod),nom:m.nom,zona:m.zona,seg:m.seg,estado:"visita",tag:"Visitado",sev:"ok",ult:i.ult,cls:i.cls}; });
+    res.listaCerrados=unicos(cer).map(function(m){ var lv=ultimaVisita(evAll[String(m.cod)]||[]), volvio=!!(lv&&lv.ts>m.ts), i=infoCompra(m.cod); return {fecha:m.d0,hora:m.hora,cod:String(m.cod),nom:m.nom,zona:m.zona,seg:null,estado:"cerrado",tag:"Cerrado",sev:volvio?"ok":"ambar",extra:volvio?"volvió a pasar":"todavía sin volver a pasar",ult:i.ult,cls:i.cls}; });
+    // todos los clientes del período, en orden de hora; los salteados (que no tienen hora) al final
+    res.clientes=res.listaVisitados.concat(res.listaCerrados).sort(function(a,b){ return (a.fecha-b.fecha)||(minHora(a.hora)-minHora(b.hora)); }).concat(res.salteados.map(function(sl){ return {fecha:sl.fecha,hora:"",cod:sl.cod,nom:sl.nom,zona:sl.zona,seg:null,estado:"salteado",tag:"Salteado",sev:"rojo",extra:sl.estado==="Pendiente"?"sigue pendiente":"visitado después",ult:sl.ult,cls:sl.cls}; }));
+
     // alertas
     var add=function(m,tipo,tag,detalle,sev){ res.revisar.push({tipo:tipo,sev:sev||"ambar",cliente:m.nom+" ("+m.cod+")",zona:m.zona,fecha:m.d0,hora:m.hora,tag:tag,detalle:detalle,extra:"",cls:"",estado:""}); };
     cm.forEach(function(m){ if((m.tipo==="visita"||m.tipo==="cerrado"||m.tipo==="horario")&&m.dist!=null&&m.dist>distLejos) add(m,"lejos","Lejos del negocio",m.hora+" · marcó a "+m.dist+" m"); });
@@ -765,7 +778,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="12d · PRUEBA";
+  const VER="12e · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -1332,13 +1345,23 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     else { d0=f; d1=f; txt=(fmtDMY(f)===fmtDMY(h)?"Hoy · ":"")+fmtDMY(f); }
     return {d0,d1,txt,futuro:d1>=h};
   }
-  const kpi=(t,v,cls)=>{ const d=el("div","kpi"+(cls?" "+cls:"")); d.appendChild(el("div","kl",t)); d.appendChild(el("div","kv",String(v))); return d; };
+  const kpi=(t,v,cls,clave)=>{ const d=el("button","kpi"+(cls?" "+cls:"")); d.type="button"; if(clave) d.dataset.k=clave; d.setAttribute("aria-expanded","false"); d.appendChild(el("div","kl",t)); d.appendChild(el("div","kv",String(v))); if(clave&&Number(v)>0) d.appendChild(el("div","ks",clave==="revisar"?"Ver abajo":"Tocá para ver quiénes")); return d; };
   const mini=(t,v)=>{ const d=el("div"); d.appendChild(document.createTextNode(t)); d.appendChild(el("b",null,v)); return d; };
   function filaRevisar(x,conFecha){
     const d=el("div","rev "+x.sev), t=el("div","revt");
     t.appendChild(el("b",null,x.cliente)); t.appendChild(el("span","pilla "+x.sev,x.tag)); d.appendChild(t);
     d.appendChild(el("div","addr",(conFecha&&x.fecha?fmtDMY(new Date(x.fecha)).slice(0,5)+" · ":"")+x.zona+(x.detalle?" · "+x.detalle:"")));
     if(x.tipo==="salteado"){ const l=el("div","revx"); if(x.extra) l.appendChild(el("span","tag "+(x.cls||"gray"),x.extra)); l.appendChild(document.createTextNode(" "+(x.estado==="Pendiente"?"· sigue pendiente":"· visitado después"))); d.appendChild(l); }
+    return d;
+  }
+  function filaCliente(x,conFecha){
+    const d=el("div","rev "+(x.sev||"gris")), t=el("div","revt");
+    t.appendChild(el("b",null,x.nom+" ("+x.cod+")")); t.appendChild(el("span","pilla "+(x.sev||"gris"),x.tag)); d.appendChild(t);
+    const partes=[]; if(conFecha&&x.fecha) partes.push(fmtDMY(new Date(x.fecha)).slice(0,5)); if(x.hora) partes.push(x.hora); partes.push(x.zona);
+    if(x.estado==="visita") partes.push(x.seg!=null?"estuvo "+P_.fmtDur(x.seg):"tiempo sin medir");
+    if(x.extra) partes.push(x.extra);
+    d.appendChild(el("div","addr",partes.join(" · ")));
+    if(x.ult){ const l=el("div","revx"); l.appendChild(el("span","tag "+(x.cls||"gray"),x.ult)); d.appendChild(l); }
     return d;
   }
   function plegable(titulo,hijos,alAbrir){
@@ -1361,11 +1384,28 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
 
     // 1) cuadros
     const k=el("div","kpis");
-    k.appendChild(kpi("Visitados",R.visitas)); k.appendChild(kpi("Cerrados",R.cerrados));
-    k.appendChild(kpi("Salteados",R.salteados.length,R.salteados.length?"err":""));
-    k.appendChild(kpi("Para revisar",R.revisar.length,R.revisar.length?"pend":""));
+    k.appendChild(kpi("Visitados",R.visitas,"","visitados")); k.appendChild(kpi("Cerrados",R.cerrados,"","cerrados"));
+    k.appendChild(kpi("Salteados",R.salteados.length,R.salteados.length?"err":"","salteados"));
+    k.appendChild(kpi("Para revisar",R.revisar.length,R.revisar.length?"pend":"","revisar"));
     if(!dia){ k.appendChild(kpi("Días trabajados",R.nDias)); k.appendChild(kpi("Visitas por día",R.visitasPorDia!=null?fmt1(R.visitasPorDia):"–")); }
     box.appendChild(k);
+    const panel=el("div","sec hidden"); panel.id="cLista"; box.appendChild(panel);
+    const listas={ visitados:{t:"Visitados",items:R.listaVisitados}, cerrados:{t:"Cerrados",items:R.listaCerrados}, salteados:{t:"Salteados",items:R.clientes.filter(x=>x.estado==="salteado")} };
+    const pintarPanel=()=>{
+      panel.replaceChildren();
+      k.querySelectorAll(".kpi").forEach(b=>b.setAttribute("aria-expanded",String(!!b.dataset.k&&b.dataset.k===S.ctlLista)));
+      const L=listas[S.ctlLista]; if(!L){ panel.classList.add("hidden"); return; }
+      panel.classList.remove("hidden"); panel.appendChild(el("h3",null,L.t+" ("+L.items.length+")"));
+      if(!L.items.length) panel.appendChild(el("div","addr","Ninguno en este período."));
+      L.items.slice(0,200).forEach(x=>panel.appendChild(filaCliente(x,!dia)));
+      if(L.items.length>200) panel.appendChild(el("div","addr","Y "+(L.items.length-200)+" más. Mirá un período más corto para verlos todos."));
+    };
+    k.addEventListener("click",ev=>{
+      const b=ev.target.closest(".kpi"); if(!b||!b.dataset.k) return;
+      if(b.dataset.k==="revisar"){ if(sec.scrollIntoView) sec.scrollIntoView({behavior:"smooth"}); return; }
+      S.ctlLista=(S.ctlLista===b.dataset.k)?"":b.dataset.k; pintarPanel();
+    });
+    pintarPanel();
 
     // 2) para revisar
     const sec=el("div","sec"); sec.appendChild(el("h3",null,"Para revisar"));
@@ -1398,6 +1438,10 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     }
 
     // 6) detalle plegado
+    { const lc=el("div"); if(!R.clientes.length) lc.appendChild(el("div","addr","Sin clientes en este período."));
+      R.clientes.slice(0,200).forEach(x=>lc.appendChild(filaCliente(x,!dia)));
+      if(R.clientes.length>200) lc.appendChild(el("div","addr","Y "+(R.clientes.length-200)+" más. Mirá un período más corto para verlos todos."));
+      box.appendChild(plegable("Clientes del "+(dia?"día":"período")+" ("+R.clientes.length+")",[lc])); }
     if(dia){
       const lst=el("div"); if(!ms.length) lst.appendChild(el("div","addr","Sin marcas este día."));
       ms.slice().sort((a,b)=>a.hora<b.hora?-1:1).forEach(m=>{
