@@ -89,6 +89,18 @@ ol.cards{list-style:none;margin:0;padding:0}
 .card .ttl{display:flex;gap:10px;align-items:flex-start}
 .pos2{font-size:24px;font-weight:700;color:var(--muted);min-width:34px;text-align:right;line-height:1.1;font-variant-numeric:tabular-nums}
 .card.hecho .pos2{color:var(--ok)}
+.card.abierta{border:2px solid var(--accent);scroll-margin-top:12px}
+.card.compacta{padding:6px 8px;margin:0 0 6px;cursor:pointer}
+.card.compacta .ttl{display:flex;align-items:stretch;gap:5px}
+.card.compacta .info{flex:1;min-width:0}
+.card.compacta button.flecha{flex:0 0 30px;min-height:44px;padding:0;font-size:12px;line-height:1;font-weight:400;border-radius:10px;color:var(--muted);background:transparent}
+.card.compacta button.flecha:disabled{opacity:.3}
+.card.compacta .name{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.compacta .hor{margin-top:2px}
+.card.compacta .tag{font-size:11px;padding:0 6px}
+.card.compacta .hor{line-height:1.45}
+.vistaRow{display:flex;justify-content:flex-end;margin:0 0 6px}
+button.vista{font-size:13px;min-height:32px;padding:4px 12px;font-weight:400}
 .tag.green{background:var(--ok-bg);color:var(--ok)}
 .tag.amber{background:var(--pend-bg);color:var(--pend)}
 .tag.red{background:var(--err-bg);color:var(--err)}
@@ -217,7 +229,7 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
     </div>
     <div class="ctl"><button id="cPrev" aria-label="Anterior">◀</button><b id="cFecha"></b><button id="cNext" aria-label="Siguiente">▶</button></div>
     <div id="cRango" class="hidden" style="display:flex;gap:8px;align-items:end;flex-wrap:wrap;margin-bottom:8px"><label>Desde<input type="date" id="cDesde"></label><label>Hasta<input type="date" id="cHasta"></label><button id="cVer">Ver</button></div>
-    <div style="margin-bottom:8px"><button id="cAct">Actualizar</button></div>
+    <div style="margin-bottom:8px;display:flex;gap:8px;flex-wrap:wrap"><button id="cAct">Actualizar</button><button id="cExcel" disabled>Descargar Excel</button></div>
     <div id="cCuerpo"></div>
   </section>
   <section id="vGps" class="hidden">
@@ -752,6 +764,94 @@ window.RepartoPlan=(function(){
     dedupe:dedupe,inicioDia:inicioDia,eventos:eventos,ultimaVisita:ultimaVisita,estadoCliente:estadoCliente,indicePartida:indicePartida,
     armarPlan:armarPlan,huecoInicio:huecoInicio,resumenControl:resumenControl,parseFecha:parseFecha,diasDesde:diasDesde,prioridadCompra:prioridadCompra,sinHorarioDesde:sinHorarioDesde,fmtDur:fmtDur,fmtCron:fmtCron,llegadaAbierta:llegadaAbierta,duraciones:duraciones,viajes:viajes,ritmo:ritmo,demoraPorCliente:demoraPorCliente,turnoAhora:turnoAhora,hechosTurno:hechosTurno,TURNOS:TURNOS,arrastre:arrastre,calcularSalida:calcularSalida,estimarMin:estimarMin,controlDia:controlDia,avanceZona:avanceZona,proyectar:proyectar,ajustarMapa:ajustarMapa,moverEnLista:moverEnLista};
 })();
+/* Generador mínimo de archivos Excel (.xlsx), sin librerías ni internet. Varias solapas, encabezado en negrita, anchos de columna y enlaces. */
+window.RepartoXlsx=(function(){
+  var TABLA=null;
+  function crc32(b){
+    if(!TABLA){ TABLA=[]; for(var n=0;n<256;n++){ var c=n; for(var k=0;k<8;k++) c=(c&1)?(0xEDB88320^(c>>>1)):(c>>>1); TABLA[n]=c>>>0; } }
+    var c2=0xFFFFFFFF; for(var i=0;i<b.length;i++) c2=TABLA[(c2^b[i])&0xFF]^(c2>>>8); return (c2^0xFFFFFFFF)>>>0;
+  }
+  function utf8(s){
+    var o=[]; s=String(s);
+    for(var i=0;i<s.length;i++){
+      var c=s.charCodeAt(i);
+      if(c>=0xD800&&c<=0xDBFF&&i+1<s.length){ var d=s.charCodeAt(i+1); if(d>=0xDC00&&d<=0xDFFF){ c=0x10000+((c-0xD800)<<10)+(d-0xDC00); i++; } }
+      if(c<0x80) o.push(c);
+      else if(c<0x800) o.push(0xC0|(c>>6),0x80|(c&63));
+      else if(c<0x10000) o.push(0xE0|(c>>12),0x80|((c>>6)&63),0x80|(c&63));
+      else o.push(0xF0|(c>>18),0x80|((c>>12)&63),0x80|((c>>6)&63),0x80|(c&63));
+    }
+    return o;
+  }
+  function u16(n){ return [n&255,(n>>8)&255]; }
+  function u32(n){ return [n&255,(n>>>8)&255,(n>>>16)&255,(n>>>24)&255]; }
+  // zip "stored" (sin comprimir): alcanza y es lo más simple de validar
+  function zip(archivos){
+    var out=[], central=[], DOSF=((2026-1980)<<9)|(1<<5)|1, DOST=0;
+    archivos.forEach(function(a){
+      var nombre=utf8(a.nombre), datos=utf8(a.texto), crc=crc32(datos), off=out.length;
+      out=out.concat([0x50,0x4B,0x03,0x04],u16(20),u16(0x0800),u16(0),u16(DOST),u16(DOSF),u32(crc),u32(datos.length),u32(datos.length),u16(nombre.length),u16(0),nombre,datos);
+      central=central.concat([0x50,0x4B,0x01,0x02],u16(20),u16(20),u16(0x0800),u16(0),u16(DOST),u16(DOSF),u32(crc),u32(datos.length),u32(datos.length),u16(nombre.length),u16(0),u16(0),u16(0),u16(0),u32(0),u32(off),nombre);
+    });
+    var tam=central.length, ini=out.length;
+    out=out.concat(central,[0x50,0x4B,0x05,0x06],u16(0),u16(0),u16(archivos.length),u16(archivos.length),u32(tam),u32(ini),u16(0));
+    return new Uint8Array(out);
+  }
+  function esc(s){ return String(s).replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g,"").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+  function col(n){ var s=""; n++; while(n>0){ var m=(n-1)%26; s=String.fromCharCode(65+m)+s; n=Math.floor((n-1)/26); } return s; }
+  function nombreHoja(n,usados){
+    var b=String(n).replace(/[\[\]:*?\/\\]/g," ").trim().slice(0,31)||"Hoja", x=b, i=2;
+    while(usados[x.toLowerCase()]){ x=b.slice(0,28)+" "+i; i++; } usados[x.toLowerCase()]=1; return x;
+  }
+  // celda: texto, número, o {url,txt} (enlace) ; en la 1ra fila de una hoja con "encabezado" va en negrita con fondo
+  function celdaXml(v,r,c,estilo){
+    var ref=col(c)+r;
+    if(v===null||v===undefined||v==="") return "";
+    if(typeof v==="number"&&isFinite(v)) return '<c r="'+ref+'"'+(estilo?' s="'+estilo+'"':'')+'><v>'+v+'</v></c>';
+    if(typeof v==="object"&&v.url) return '<c r="'+ref+'" s="3" t="str"><f>HYPERLINK("'+esc(String(v.url).replace(/"/g,""))+'","'+esc(String(v.txt||"Ver").replace(/"/g,""))+'")</f><v>'+esc(v.txt||"Ver")+'</v></c>';
+    return '<c r="'+ref+'"'+(estilo?' s="'+estilo+'"':'')+' t="inlineStr"><is><t xml:space="preserve">'+esc(v)+'</t></is></c>';
+  }
+  function hojaXml(h){
+    var filas=h.filas||[], ancho=h.anchos||[], x='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">';
+    if(h.encabezado) x+='<sheetViews><sheetView workbookViewId="0"><pane ySplit="1" topLeftCell="A2" activePane="bottomLeft" state="frozen"/></sheetView></sheetViews>';
+    if(ancho.length){ x+='<cols>'; ancho.forEach(function(w,i){ x+='<col min="'+(i+1)+'" max="'+(i+1)+'" width="'+w+'" customWidth="1"/>'; }); x+='</cols>'; }
+    x+='<sheetData>';
+    filas.forEach(function(f,i){
+      var r=i+1, cel="";
+      (f||[]).forEach(function(v,c){ var est=0; if(h.encabezado&&i===0) est=1; else if(h.negritaCol0&&c===0) est=2; else if(h.titulo&&i===0) est=2; cel+=celdaXml(v,r,c,est); });
+      x+='<row r="'+r+'">'+cel+'</row>';
+    });
+    return x+'</sheetData></worksheet>';
+  }
+  var STYLES='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+    +'<fonts count="3"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font><font><u/><sz val="11"/><color rgb="FF0563C1"/><name val="Calibri"/></font></fonts>'
+    +'<fills count="3"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill><fill><patternFill patternType="solid"><fgColor rgb="FFE2EFDA"/><bgColor indexed="64"/></patternFill></fill></fills>'
+    +'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+    +'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+    +'<cellXfs count="4"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="2" borderId="0" xfId="0" applyFont="1" applyFill="1"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/><xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
+    +'<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  // hojas: [{nombre, filas:[[...]], anchos:[..], encabezado:true|false, titulo:true, negritaCol0:true}]
+  function bytes(hojas){
+    var usados={}, nombres=hojas.map(function(h){ return nombreHoja(h.nombre,usados); }), n=hojas.length, a=[];
+    var ct='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/><Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>';
+    for(var i=1;i<=n;i++) ct+='<Override PartName="/xl/worksheets/sheet'+i+'.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>';
+    ct+='</Types>';
+    a.push({nombre:"[Content_Types].xml",texto:ct});
+    a.push({nombre:"_rels/.rels",texto:'<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/></Relationships>'});
+    var wb='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>';
+    nombres.forEach(function(nm,i){ wb+='<sheet name="'+esc(nm).replace(/"/g,"&quot;")+'" sheetId="'+(i+1)+'" r:id="rId'+(i+1)+'"/>'; });
+    wb+='</sheets></workbook>'; a.push({nombre:"xl/workbook.xml",texto:wb});
+    var rel='<?xml version="1.0" encoding="UTF-8" standalone="yes"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">';
+    for(var j=1;j<=n;j++) rel+='<Relationship Id="rId'+j+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet'+j+'.xml"/>';
+    rel+='<Relationship Id="rId'+(n+1)+'" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>';
+    a.push({nombre:"xl/_rels/workbook.xml.rels",texto:rel});
+    a.push({nombre:"xl/styles.xml",texto:STYLES});
+    hojas.forEach(function(h,i){ a.push({nombre:"xl/worksheets/sheet"+(i+1)+".xml",texto:hojaXml(h)}); });
+    return zip(a);
+  }
+  return {bytes:bytes,crc32:crc32,utf8:utf8,col:col};
+})();
+
 
 </script>
 <script>
@@ -802,7 +902,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="12f · PRUEBA";
+  const VER="12i · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -912,7 +1012,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     pintarCola();
   }
   // ---------- HOY: plan del día, visitas y orden sugerido ----------
-  const P_=window.RepartoPlan, PLAN_KEY="prueba_reparto_plan_v1", OBJ_KEY="prueba_reparto_obj_v1", DIST_LEJOS=150;
+  const P_=window.RepartoPlan, PLAN_KEY="prueba_reparto_plan_v1", COMPACTO_KEY="prueba_reparto_compacto_v1", OBJ_KEY="prueba_reparto_obj_v1", DIST_LEJOS=150;
   const CODIGO={visita:"v",cerrado:"c",pendiente:"p",inicio:"i",llegada:"l",anulaLlegada:"x",sinHorario:"h"};
   const TURNO_KEY="prueba_reparto_turno_v1";
   function turnoActual(){ const t=lsGet(TURNO_KEY,null); return (t&&t.fecha===fechaLocal()&&(t.t==="manana"||t.t==="tarde"))?t.t:P_.turnoAhora(Date.now()); }
@@ -930,7 +1030,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     cola().forEach(r=>{ const t=CODIGO[r.tipo]; if(t&&!ids.has(r.id)){ ids.add(r.id); out.push({c:r.cod,t:t,ts:r.ts,id:r.id}); } });
     return out;
   }
-  function nuevaMarca(reg){ S.marcas.push({c:reg.cod,t:CODIGO[reg.tipo],ts:reg.ts,id:reg.id}); guardarCache(); }
+  function nuevaMarca(reg){ S.marcas.push({c:reg.cod,t:CODIGO[reg.tipo],ts:reg.ts,id:reg.id}); guardarCache(); if(reg.tipo==="visita"||reg.tipo==="cerrado"||reg.tipo==="pendiente"){ S.abierto=null; S.irAbierto=true; } }   // después de marcar o deshacer, se abre solo el que sigue
 
   function planDeHoy(){ const p=lsGet(PLAN_KEY,null), f=fechaLocal(); return (p&&p.fecha===f)?p:{fecha:f,zonas:{}}; }
   // Clientes que se saltó hoy con "Empezar acá" (si después los visita, no cuentan como avance del recorrido).
@@ -1077,6 +1177,37 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   $("margen").value=String(lsGet(MARGEN_KEY,15));
   $("margen").addEventListener("change",e=>{ lsSet(MARGEN_KEY,Number(e.target.value)); });
 
+  // Vista compacta: el cliente que se atiende se ve completo (todos los botones) y los demás en una filita que se abre al tocarla.
+  // Se ven completos: el que Pablo abrió tocándolo, el que tiene "Llegué" en curso y, si no hay ninguno de los dos, el primero de la lista.
+  const vistaCompacta=()=>lsGet(COMPACTO_KEY,"1")!=="0";
+  function codsAbiertos(pend){
+    const out={};
+    pend.forEach(c=>{ if(llegadaDe(c.cod)) out[c.cod]=true; });
+    if(S.abierto&&pend.some(c=>c.cod===S.abierto)) out[S.abierto]=true;
+    if(!Object.keys(out).length&&pend.length) out[pend[0].cod]=true;
+    return out;
+  }
+  function tarjetaCompacta(c,o){
+    const li=el("li","card compacta"), ttl=el("div","ttl");
+    li.tabIndex=0; li.setAttribute("role","button"); li.setAttribute("aria-expanded","false");
+    const flecha=(txt,delta,desactivada,aria)=>{ const b=el("button","flecha",txt); b.type="button"; b.setAttribute("aria-label",aria); b.disabled=desactivada;
+      b.addEventListener("click",ev=>{ ev.stopPropagation(); mover(c.cod,delta,o.visibles); }); return b; };
+    const info=el("div","info"), nm=el("div","name",o.pos+"  ·  "+c.nom+"  ·  "+c.cod);
+    if(o.deAyer){ nm.appendChild(document.createTextNode(" ")); nm.appendChild(el("span","tag amber","De ayer")); }
+    info.appendChild(nm);
+    const hor=el("div","hor");
+    P_.etiquetas(S.horarios[c.cod],turnoActual()).forEach(t=>{ hor.appendChild(el("span","tag "+t.cls,t.txt)); hor.appendChild(document.createTextNode(" ")); });
+    const pc=P_.prioridadCompra(c.ult,Date.now());
+    if(pc){ hor.appendChild(el("span","tag "+pc.cls,pc.dias==null?"Sin compras":pc.dias+" días")); hor.appendChild(document.createTextNode(" ")); }
+    if(o.atras) hor.appendChild(el("span","tag red","Quedó atrás"));
+    info.appendChild(hor);
+    ttl.appendChild(flecha("▲",-1,o.pos<=1,"Subir un lugar")); ttl.appendChild(info); ttl.appendChild(flecha("▼",1,!!o.ultimo,"Bajar un lugar"));
+    li.appendChild(ttl);
+    const abrirFila=()=>{ S.abierto=c.cod; S.irAbierto=true; pintarHoy(); };
+    li.addEventListener("click",abrirFila);
+    li.addEventListener("keydown",ev=>{ if(ev.target===li&&(ev.key==="Enter"||ev.key===" ")){ ev.preventDefault(); abrirFila(); } });
+    return li;
+  }
   function tarjetaHoy(c,o){
     const li=el("li","card"+(o.tipo==="hecho"?" hecho":""));
     const ttl=el("div","ttl"); ttl.appendChild(el("div","pos2",o.pos?String(o.pos):"✓"));
@@ -1166,6 +1297,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     const chips=el("div","chips");
     [["Hechos",hechos.length],["Faltan",pend.length],["Volver a pasar",volver.length]].forEach(([t,v])=>{ const s=el("span","chip"); s.appendChild(el("b",null,String(v))); s.appendChild(document.createTextNode(" "+t)); chips.appendChild(s); });
     top.appendChild(chips);
+    if(pend.length>1){ const vr=el("div","vistaRow"), vb=el("button","vista",vistaCompacta()?"Ver todo completo":"Ver compacto"); vb.id="bVista"; vb.addEventListener("click",()=>{ lsSet(COMPACTO_KEY,vistaCompacta()?"0":"1"); S.abierto=null; pintarHoy(); }); vr.appendChild(vb); top.appendChild(vr); }
     { const arr=(planDeHoy().arranque||{})[kz(z)]; if(!arr&&!zonaConMarcas(z)&&z.clientes.length) top.appendChild(cajaArranque(z)); }
     if(pend.length){
       const p=pend[0], hp=S.horarios[p.cod], bar=el("div","sigbar");
@@ -1177,7 +1309,11 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
       else if(sin) top.appendChild(el("div","motivo",sin+" de "+pend.length+" sin horario: van en orden de recorrido."));
     }
     const visibles=pend.map(c=>c.cod);
-    pend.forEach((c,i)=>{ const r=porCod[c.cod]; lista.appendChild(tarjetaHoy(c,{tipo:"plan",pos:i+1,motivo:(zp.motivos||{})[c.cod],visibles:visibles,siguiente:pend[i+1]||null,deAyer:!!(zp.deAyer&&zp.deAyer[c.cod]),atras:maxOff>=0&&off(r.i)<maxOff-P_.CFG.VENTANA})); });
+    const compacta=vistaCompacta(), abiertos=compacta?codsAbiertos(pend):null;
+    pend.forEach((c,i)=>{ const r=porCod[c.cod], o={tipo:"plan",pos:i+1,motivo:(zp.motivos||{})[c.cod],visibles:visibles,siguiente:pend[i+1]||null,ultimo:i===pend.length-1,deAyer:!!(zp.deAyer&&zp.deAyer[c.cod]),atras:maxOff>=0&&off(r.i)<maxOff-P_.CFG.VENTANA};
+      if(compacta&&!abiertos[c.cod]) lista.appendChild(tarjetaCompacta(c,o));
+      else { const li=tarjetaHoy(c,o); if(compacta) li.classList.add("abierta"); lista.appendChild(li); } });
+    if(compacta&&S.irAbierto){ S.irAbierto=false; const ab=lista.querySelector("li.card.abierta"); if(ab&&ab.scrollIntoView) ab.scrollIntoView({behavior:"smooth",block:"start"}); }
     $("hoySalida").classList.toggle("hidden",!pend.length);
     if(!pend.length){
       if(hechos.length||volver.length){
@@ -1410,8 +1546,36 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     if(alAbrir) d.addEventListener("toggle",()=>{ if(d.open&&!d.dataset.listo){ d.dataset.listo="1"; alAbrir(); } });
     return d;
   }
+  function descargarArchivo(nombre,bytes){
+    const blob=new Blob([bytes],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"}), url=URL.createObjectURL(blob);
+    const a=document.createElement("a"); a.href=url; a.download=nombre; document.body.appendChild(a); a.click();
+    setTimeout(()=>{ try{ URL.revokeObjectURL(url); }catch(e){} a.remove(); },1500);
+  }
+  // Hojas del Excel con lo que se está viendo en Control (el mismo período).
+  function armarHojasExcel(U){
+    const R=U.R, r=U.r, ahora=Date.now(), DS=["dom","lun","mar","mié","jue","vie","sáb"], COL={ok:"Verde",pend:"Amarillo",err:"Rojo"};
+    const f=ms=>fmtDMY(new Date(ms)), r1=n=>(n==null||!isFinite(n))?"":Math.round(n*10)/10, ahoraD=new Date();
+    const porCod={}; S.zonas.forEach(z=>z.clientes.forEach(c=>{ porCod[String(c.cod)]=c; }));
+    const resumen=[["Control de reparto de Pablo – Especias 537"],["Período",r.txt],["Desde",fmtDMY(r.d0)],["Hasta",fmtDMY(r.d1)],["Generado",fmtDMY(ahoraD)+" "+pad(ahoraD.getHours())+":"+pad(ahoraD.getMinutes())],[],
+      ["Visitados",R.visitas],["Cerrados",R.cerrados],["Salteados",R.salteados.length],["Para revisar",R.revisar.length],["Días trabajados",R.nDias],["Visitas por día",r1(R.visitasPorDia)],[],
+      ["Arranque promedio",R.arranquePromedio?R.arranquePromedio.hora:""],["Jornada promedio",R.jornada?R.jornada.primera+" a "+R.jornada.ultima:""],["Tiempo en el negocio (min, promedio)",r1(R.enNegocioMin)],["Viaje entre clientes (min, promedio)",r1(R.viajeMin)],["Visitas sin Llegué (tiempo sin medir)",R.sinMedir]];
+    if(R.capacidad){ const c=R.capacidad; resumen.push([],["Padrón: visitas que hacen falta por mes (una cada 30 días)",c.padron],["Capacidad del mes (visitas)",c.capacidad],["Diferencia",c.diferencia],["Uso de la capacidad (%)",Math.round(c.uso*100)]); }
+    resumen.push([],["Colores del arranque","Verde hasta "+P_.fmtMin(P_.CFG.ARRANQUE_VERDE)+", amarillo hasta "+P_.fmtMin(P_.CFG.ARRANQUE_AMBAR)+", rojo después"]);
+    const dias=[["Fecha","Día","Arrancó","Terminó","Jornada (min)","Visitas","Color del arranque","Zonas"]].concat(R.dias.map(D=>[f(D.fecha),DS[new Date(D.fecha).getDay()],D.hArranque,D.hFin,D.minutos,D.visitas,COL[D.clase],D.zonas.map(z=>z.zona).join(", ")]));
+    const cli=[["Fecha","Hora","Estado","Código","Cliente","Zona","Estuvo (min)","Última compra","Días sin comprar","Nota","Dónde marcó","Negocio"]].concat(R.clientes.map(x=>{
+      const c=porCod[String(x.cod)]||{}, ult=c.ult||"", dd=P_.diasDesde(ult,ahora), neg=urlNegocio(String(x.cod)), marc=(x.mapa&&String(x.mapa).indexOf("http")===0)?x.mapa:"";
+      return [f(x.fecha),x.hora||"",x.tag,x.cod,x.nom,x.zona,x.seg==null?"":r1(x.seg/60),ult,dd==null?"":dd,x.extra||"",marc?{url:marc,txt:"Ver dónde marcó"}:"",neg?{url:neg,txt:"Ver negocio"}:""];
+    }));
+    const ale=[["Tipo","Cliente","Zona","Fecha","Hora","Detalle"]].concat(R.revisar.filter(x=>x.tipo!=="salteado").map(x=>[x.tag,x.cliente,x.zona,f(x.fecha),x.hora||"",x.detalle||""]));
+    return [
+      {nombre:"Resumen",titulo:true,negritaCol0:true,anchos:[52,34],filas:resumen},
+      {nombre:"Por día",encabezado:true,anchos:[12,6,10,10,14,9,18,30],filas:dias},
+      {nombre:"Clientes",encabezado:true,anchos:[12,8,11,9,34,18,12,28,16,26,17,14],filas:cli},
+      {nombre:"Alertas",encabezado:true,anchos:[20,36,18,12,8,60],filas:ale}
+    ];
+  }
   async function pintarControl(){
-    const r=rangoControl(), tok=S.ctlTok=(S.ctlTok||0)+1;
+    const r=rangoControl(), tok=S.ctlTok=(S.ctlTok||0)+1; S.ctlUlt=null; $("cExcel").disabled=true;
     document.querySelectorAll(".modos button").forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.m===S.ctlModo)));
     $("cFecha").textContent=r.txt; $("cNext").disabled=r.futuro||S.ctlModo==="ran"; $("cPrev").disabled=S.ctlModo==="ran";
     $("cRango").classList.toggle("hidden",S.ctlModo!=="ran");
@@ -1539,7 +1703,13 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     const nombreDe={}; S.zonas.forEach(z=>z.clientes.forEach(c=>{ nombreDe[c.cod]=c.nom; }));
     seccion(ex,"Clientes que más demoran",P_.demoraPorCliente(S.marcas,S.zonas.reduce((a,z)=>a.concat(z.clientes),[])).slice(0,5).map(x=>(nombreDe[x.c]||x.c)+" ("+x.c+"): "+x.min.toFixed(1)+" min promedio · "+x.n+" visita(s)"),"Todavía sin datos.");
     box.appendChild(plegable("Avance, ritmo y clientes que más demoran",[ex]));
+    S.ctlUlt={R:R,r:r,dia:dia}; $("cExcel").disabled=false;
   }
+  $("cExcel").addEventListener("click",()=>{
+    const U=S.ctlUlt; if(!U) return;
+    const a=isoFecha(U.r.d0), b=isoFecha(U.r.d1);
+    descargarArchivo("Control_reparto_"+a+(a!==b?"_a_"+b:"")+".xlsx",window.RepartoXlsx.bytes(armarHojasExcel(U)));
+  });
   document.querySelectorAll(".modos button").forEach(b=>b.addEventListener("click",()=>{
     S.ctlModo=b.dataset.m;
     if(S.ctlModo==="ran"&&!S.ctlDesde){ const h=hoy0(), a=new Date(h); a.setDate(h.getDate()-6); S.ctlDesde=a; S.ctlHasta=h; }
