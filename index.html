@@ -904,7 +904,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="12j · PRUEBA";
+  const VER="12k · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -1534,11 +1534,14 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
   const urlPunto=(lat,lng)=>"https://www.google.com/maps/search/?api=1&query="+lat+","+lng;
   const urlNegocio=cod=>{ const h=S.horarios[cod]; return (h&&h.lat!=null&&h.lng!=null)?urlPunto(h.lat,h.lng):""; };
+  // Para ir a ver el negocio: si ya tiene la ubicación guardada (GPS) se abre ese punto exacto; si no, se busca la dirección en el mapa (igual que "Cómo llegar" en Hoy).
+  const urlDireccion=cod=>{ const dr=dirDe(cod); return dr?"https://www.google.com/maps/search/?api=1&query="+encodeURIComponent(dr+", Buenos Aires"):""; };
+  function linkNegocio(cod){ const n=urlNegocio(cod); if(n) return {url:n,txt:"Ver negocio"}; const d=urlDireccion(cod); return d?{url:d,txt:"Ver por dirección"}:null; }
   // "Ver dónde marcó" (donde estaba Pablo al marcar) y "Ver negocio" (la ubicación fija del negocio, si ya está cargada)
   function enlaces(x){
     const e=el("div","enl");
     if(x.mapa&&String(x.mapa).indexOf("http")===0) e.appendChild(linkMaps("Ver dónde marcó",x.mapa,"enlace"));
-    const n=urlNegocio(x.cod); if(n) e.appendChild(linkMaps("Ver negocio",n,"enlace"));
+    const ln=linkNegocio(x.cod); if(ln) e.appendChild(linkMaps(ln.txt,ln.url,"enlace"));
     return e.children.length?e:null;
   }
   function filaCliente(x,conFecha){
@@ -1575,8 +1578,8 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     resumen.push([],["Colores del arranque","Verde hasta "+P_.fmtMin(P_.CFG.ARRANQUE_VERDE)+", amarillo hasta "+P_.fmtMin(P_.CFG.ARRANQUE_AMBAR)+", rojo después"]);
     const dias=[["Fecha","Día","Arrancó","Terminó","Jornada (min)","Visitas","Color del arranque","Zonas"]].concat(R.dias.map(D=>[f(D.fecha),DS[new Date(D.fecha).getDay()],D.hArranque,D.hFin,D.minutos,D.visitas,COL[D.clase],D.zonas.map(z=>z.zona).join(", ")]));
     const cli=[["Fecha","Hora","Estado","Código","Cliente","Dirección","Zona","Estuvo (min)","Última compra","Días sin comprar","Nota","Dónde marcó","Negocio"]].concat(R.clientes.map(x=>{
-      const c=porCod[String(x.cod)]||{}, ult=c.ult||"", dd=P_.diasDesde(ult,ahora), neg=urlNegocio(String(x.cod)), marc=(x.mapa&&String(x.mapa).indexOf("http")===0)?x.mapa:"";
-      return [f(x.fecha),x.hora||"",x.tag,x.cod,x.nom,dirDe(x.cod),x.zona,x.seg==null?"":r1(x.seg/60),ult,dd==null?"":dd,x.extra||"",marc?{url:marc,txt:"Ver dónde marcó"}:"",neg?{url:neg,txt:"Ver negocio"}:""];
+      const c=porCod[String(x.cod)]||{}, ult=c.ult||"", dd=P_.diasDesde(ult,ahora), neg=linkNegocio(String(x.cod)), marc=(x.mapa&&String(x.mapa).indexOf("http")===0)?x.mapa:"";
+      return [f(x.fecha),x.hora||"",x.tag,x.cod,x.nom,dirDe(x.cod),x.zona,x.seg==null?"":r1(x.seg/60),ult,dd==null?"":dd,x.extra||"",marc?{url:marc,txt:"Ver dónde marcó"}:"",neg?{url:neg.url,txt:neg.txt}:""];
     }));
     const ale=[["Tipo","Cliente","Zona","Fecha","Hora","Detalle"]].concat(R.revisar.filter(x=>x.tipo!=="salteado").map(x=>[x.tag,x.cliente,x.zona,f(x.fecha),x.hora||"",x.detalle||""]));
     return [
