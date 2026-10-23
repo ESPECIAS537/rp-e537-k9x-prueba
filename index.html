@@ -95,11 +95,13 @@ ol.cards{list-style:none;margin:0;padding:0}
 .card.compacta .info{flex:1;min-width:0}
 .card.compacta button.flecha{flex:0 0 30px;min-height:44px;padding:0;font-size:12px;line-height:1;font-weight:400;border-radius:10px;color:var(--muted);background:transparent}
 .card.compacta button.flecha:disabled{opacity:.3}
-.card.compacta .name{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.card.compacta .dir{font-size:14px;line-height:1.2;font-weight:700;overflow-wrap:anywhere;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}   /* si la calle es larga pasa a 2 renglones, así no se pierde el número */
+.card.compacta .name{font-size:12px;font-weight:400;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .card.compacta .hor{margin-top:2px}
 .card.compacta .tag{font-size:11px;padding:0 6px}
 .card.compacta .hor{line-height:1.45}
 .vistaRow{display:flex;justify-content:flex-end;margin:0 0 6px}
+.rev .dirl{color:var(--ink);font-weight:600}
 button.vista{font-size:13px;min-height:32px;padding:4px 12px;font-weight:400}
 .tag.green{background:var(--ok-bg);color:var(--ok)}
 .tag.amber{background:var(--pend-bg);color:var(--pend)}
@@ -902,7 +904,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="12i · PRUEBA";
+  const VER="12j · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -1177,6 +1179,13 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   $("margen").value=String(lsGet(MARGEN_KEY,15));
   $("margen").addEventListener("change",e=>{ lsSet(MARGEN_KEY,Number(e.target.value)); });
 
+  // Dirección de un cliente ("calle y número, localidad"), igual en las filitas, en el cliente abierto, en Control y en el Excel.
+  const dirTxt=c=>c?[c.dir,c.loc].filter(x=>x&&String(x).trim()).join(", "):"";
+  let _dirMapa=null, _dirZonas=null;
+  function dirDe(cod){
+    if(_dirZonas!==S.zonas){ _dirMapa={}; S.zonas.forEach(z=>z.clientes.forEach(c=>{ _dirMapa[String(c.cod)]=dirTxt(c); })); _dirZonas=S.zonas; }
+    return _dirMapa[String(cod)]||"";
+  }
   // Vista compacta: el cliente que se atiende se ve completo (todos los botones) y los demás en una filita que se abre al tocarla.
   // Se ven completos: el que Pablo abrió tocándolo, el que tiene "Llegué" en curso y, si no hay ninguno de los dos, el primero de la lista.
   const vistaCompacta=()=>lsGet(COMPACTO_KEY,"1")!=="0";
@@ -1192,7 +1201,8 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     li.tabIndex=0; li.setAttribute("role","button"); li.setAttribute("aria-expanded","false");
     const flecha=(txt,delta,desactivada,aria)=>{ const b=el("button","flecha",txt); b.type="button"; b.setAttribute("aria-label",aria); b.disabled=desactivada;
       b.addEventListener("click",ev=>{ ev.stopPropagation(); mover(c.cod,delta,o.visibles); }); return b; };
-    const info=el("div","info"), nm=el("div","name",o.pos+"  ·  "+c.nom+"  ·  "+c.cod);
+    const info=el("div","info"), dl=el("div","dir",o.pos+"  ·  "+(c.dir&&String(c.dir).trim()||c.nom)), nm=el("div","name",c.nom+"  ·  "+c.cod+(c.loc&&String(c.loc).trim()?"  ·  "+c.loc:""));   // calle y número arriba (completos); abajo nombre, código y localidad
+    info.appendChild(dl);
     if(o.deAyer){ nm.appendChild(document.createTextNode(" ")); nm.appendChild(el("span","tag amber","De ayer")); }
     info.appendChild(nm);
     const hor=el("div","hor");
@@ -1516,6 +1526,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   function filaRevisar(x,conFecha){
     const d=el("div","rev "+x.sev), t=el("div","revt");
     t.appendChild(el("b",null,x.cliente)); t.appendChild(el("span","pilla "+x.sev,x.tag)); d.appendChild(t);
+    { const dr=x.cod?dirDe(x.cod):""; if(dr) d.appendChild(el("div","addr dirl",dr)); }
     d.appendChild(el("div","addr",(conFecha&&x.fecha?fmtDMY(new Date(x.fecha)).slice(0,5)+" · ":"")+x.zona+(x.detalle?" · "+x.detalle:"")));
     if(x.tipo==="salteado"){ const l=el("div","revx"); if(x.extra) l.appendChild(el("span","tag "+(x.cls||"gray"),x.extra)); l.appendChild(document.createTextNode(" "+(x.estado==="Pendiente"?"· sigue pendiente":"· visitado después"))); d.appendChild(l); }
     if(x.cod){ const en=enlaces({cod:x.cod}); if(en) d.appendChild(en); }
@@ -1533,6 +1544,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   function filaCliente(x,conFecha){
     const d=el("div","rev "+(x.sev||"gris")), t=el("div","revt");
     t.appendChild(el("b",null,x.nom+" ("+x.cod+")")); t.appendChild(el("span","pilla "+(x.sev||"gris"),x.tag)); d.appendChild(t);
+    { const dr=dirDe(x.cod); if(dr) d.appendChild(el("div","addr dirl",dr)); }
     const partes=[]; if(conFecha&&x.fecha) partes.push(fmtDMY(new Date(x.fecha)).slice(0,5)); if(x.hora) partes.push(x.hora); partes.push(x.zona);
     if(x.estado==="visita") partes.push(x.seg!=null?"estuvo "+P_.fmtDur(x.seg):"tiempo sin medir");
     if(x.extra) partes.push(x.extra);
@@ -1562,15 +1574,15 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     if(R.capacidad){ const c=R.capacidad; resumen.push([],["Padrón: visitas que hacen falta por mes (una cada 30 días)",c.padron],["Capacidad del mes (visitas)",c.capacidad],["Diferencia",c.diferencia],["Uso de la capacidad (%)",Math.round(c.uso*100)]); }
     resumen.push([],["Colores del arranque","Verde hasta "+P_.fmtMin(P_.CFG.ARRANQUE_VERDE)+", amarillo hasta "+P_.fmtMin(P_.CFG.ARRANQUE_AMBAR)+", rojo después"]);
     const dias=[["Fecha","Día","Arrancó","Terminó","Jornada (min)","Visitas","Color del arranque","Zonas"]].concat(R.dias.map(D=>[f(D.fecha),DS[new Date(D.fecha).getDay()],D.hArranque,D.hFin,D.minutos,D.visitas,COL[D.clase],D.zonas.map(z=>z.zona).join(", ")]));
-    const cli=[["Fecha","Hora","Estado","Código","Cliente","Zona","Estuvo (min)","Última compra","Días sin comprar","Nota","Dónde marcó","Negocio"]].concat(R.clientes.map(x=>{
+    const cli=[["Fecha","Hora","Estado","Código","Cliente","Dirección","Zona","Estuvo (min)","Última compra","Días sin comprar","Nota","Dónde marcó","Negocio"]].concat(R.clientes.map(x=>{
       const c=porCod[String(x.cod)]||{}, ult=c.ult||"", dd=P_.diasDesde(ult,ahora), neg=urlNegocio(String(x.cod)), marc=(x.mapa&&String(x.mapa).indexOf("http")===0)?x.mapa:"";
-      return [f(x.fecha),x.hora||"",x.tag,x.cod,x.nom,x.zona,x.seg==null?"":r1(x.seg/60),ult,dd==null?"":dd,x.extra||"",marc?{url:marc,txt:"Ver dónde marcó"}:"",neg?{url:neg,txt:"Ver negocio"}:""];
+      return [f(x.fecha),x.hora||"",x.tag,x.cod,x.nom,dirDe(x.cod),x.zona,x.seg==null?"":r1(x.seg/60),ult,dd==null?"":dd,x.extra||"",marc?{url:marc,txt:"Ver dónde marcó"}:"",neg?{url:neg,txt:"Ver negocio"}:""];
     }));
     const ale=[["Tipo","Cliente","Zona","Fecha","Hora","Detalle"]].concat(R.revisar.filter(x=>x.tipo!=="salteado").map(x=>[x.tag,x.cliente,x.zona,f(x.fecha),x.hora||"",x.detalle||""]));
     return [
       {nombre:"Resumen",titulo:true,negritaCol0:true,anchos:[52,34],filas:resumen},
       {nombre:"Por día",encabezado:true,anchos:[12,6,10,10,14,9,18,30],filas:dias},
-      {nombre:"Clientes",encabezado:true,anchos:[12,8,11,9,34,18,12,28,16,26,17,14],filas:cli},
+      {nombre:"Clientes",encabezado:true,anchos:[12,8,11,9,30,34,18,12,28,16,26,17,14],filas:cli},
       {nombre:"Alertas",encabezado:true,anchos:[20,36,18,12,8,60],filas:ale}
     ];
   }
