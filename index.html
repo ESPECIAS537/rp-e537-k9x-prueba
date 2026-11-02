@@ -310,7 +310,7 @@ input.pinin{font:inherit;font-size:26px;letter-spacing:6px;text-align:center;wid
 <script>
 /* Lógica de "Hoy": estados de visita, punto de partida, orden sugerido y control. Sin pantalla: se puede probar sola. */
 window.RepartoPlan=(function(){
-  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, DIAS_ARRASTRE:3, CORTE_TURNO:840, CORTA_S:120, MOVIO_M:100, COMPRA_VERDE:30, COMPRA_AMBAR:60, COMPRA_NARANJA:90, ARRANQUE_VERDE:510, ARRANQUE_AMBAR:540, JORNADA:{manana:360,tarde:300}, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000, DIAS_FACTURACION:3, DIAS_VENTAS_ATRASADAS:6};
+  var CFG={START_MIN:480, VENTANA:6, DIAS_CICLO:20, DIAS_ARRASTRE:3, CORTE_TURNO:840, CORTA_S:120, MOVIO_M:100, COMPRA_VERDE:30, COMPRA_AMBAR:60, COMPRA_NARANJA:90, ARRANQUE_VERDE:510, ARRANQUE_AMBAR:540, JORNADA:{manana:360,tarde:300}, MAX_EXTRA_M:1500, MAX_EXTRA_PCT:0.3, CIERRE_TARDE:870, CIERRE_DESCONOCIDO:840, DIA_MS:86400000, DIAS_FACTURACION:3, DIAS_VENTAS_ATRASADAS:6, VENTAS_DESDE:"julio"};
 
   // ---------- turnos: mañana (hasta las 14) y tarde ----------
   // mañana: se visita desde que abren hasta que cierran al mediodía. tarde: desde que reabren hasta el cierre de la noche.
@@ -580,7 +580,7 @@ window.RepartoPlan=(function(){
   function diasDesde(fechaStr,ahora){ var t=parseFecha(fechaStr); if(t==null) return null; return Math.max(0,Math.floor((inicioDia(ahora)-t)/CFG.DIA_MS)); }
   // Color y texto según hace cuánto compró: ≤30 verde, ≤60 ámbar, ≤90 naranja, más: rojo.
   function prioridadCompra(fechaStr,ahora){
-    if(/^sin compras?$/i.test(String(fechaStr==null?"":fechaStr).trim())) return {cls:"gray",txt:"Todavía sin compras",dias:null};
+    if(/^sin compras?$/i.test(String(fechaStr==null?"":fechaStr).trim())) return {cls:"gray",txt:"Sin compras desde "+CFG.VENTAS_DESDE,dias:null};
     var d=diasDesde(fechaStr,ahora); if(d==null) return null;
     var cls=d<=CFG.COMPRA_VERDE?"green":(d<=CFG.COMPRA_AMBAR?"amber":(d<=CFG.COMPRA_NARANJA?"orange":"red"));
     var txt=d===0?"Compró hoy":(d===1?"Compró ayer":"Última compra hace "+d+" días");
@@ -941,7 +941,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
   }
 
   // ---------- PIN y rol ----------
-  const VER="12m · PRUEBA";
+  const VER="12n · PRUEBA";
   function estadoApp(){
     const t=$("verTxt"); if(!t) return;
     if(!("serviceWorker" in navigator)){ t.textContent="Versión "+VER+" · este navegador no puede guardar la app para usarla sin señal."; return; }
@@ -1263,7 +1263,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     const hor=el("div","hor");
     P_.etiquetas(S.horarios[c.cod],turnoActual()).forEach(t=>{ hor.appendChild(el("span","tag "+t.cls,t.txt)); hor.appendChild(document.createTextNode(" ")); });
     const pc=P_.prioridadCompra(c.ult,Date.now());
-    if(pc){ hor.appendChild(el("span","tag "+pc.cls,pc.dias==null?"Sin compras":pc.dias+" días")); hor.appendChild(document.createTextNode(" ")); }
+    if(pc){ hor.appendChild(el("span","tag "+pc.cls,pc.dias==null?"Sin compras desde "+P_.CFG.VENTAS_DESDE.slice(0,3)+".":pc.dias+" días")); hor.appendChild(document.createTextNode(" ")); }
     if(o.atras) hor.appendChild(el("span","tag red","Quedó atrás"));
     info.appendChild(hor);
     ttl.appendChild(flecha("▲",-1,o.pos<=1,"Subir un lugar")); ttl.appendChild(info); ttl.appendChild(flecha("▼",1,!!o.ultimo,"Bajar un lugar"));
@@ -1636,12 +1636,12 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     const resumen=[["Control de reparto de Pablo – Especias 537"],["Período",r.txt],["Desde",fmtDMY(r.d0)],["Hasta",fmtDMY(r.d1)],["Generado",fmtDMY(ahoraD)+" "+pad(ahoraD.getHours())+":"+pad(ahoraD.getMinutes())],[],
       ["Visitados",R.visitas],["Cerrados",R.cerrados],["Salteados",R.salteados.length],["Para revisar",R.revisar.length],["Días trabajados",R.nDias],["Visitas por día",r1(R.visitasPorDia)],[],
       ["Arranque promedio",R.arranquePromedio?R.arranquePromedio.hora:""],["Jornada promedio",R.jornada?R.jornada.primera+" a "+R.jornada.ultima:""],["Tiempo en el negocio (min, promedio)",r1(R.enNegocioMin)],["Viaje entre clientes (min, promedio)",r1(R.viajeMin)],["Visitas sin Llegué (tiempo sin medir)",R.sinMedir]];
-    if(R.compras&&R.compras.total){ const cc=R.compras; resumen.push([],["Compraron desde la visita",cc.compraron],["Sin compra desde la visita",cc.sin],["En espera de facturación",cc.espera],["% que compró (de los que ya se pueden medir)",cc.pct==null?"":cc.pct],["Ventas cargadas hasta",cc.ventasHasta!=null?fmtDMY(new Date(cc.ventasHasta)):"sin ventas cargadas"]); }
+    if(R.compras&&R.compras.total){ const cc=R.compras; resumen.push([],["Compraron desde la visita",cc.compraron],["Sin compra desde la visita",cc.sin],["En espera de facturación",cc.espera],["% que compró (de los que ya se pueden medir)",cc.pct==null?"":cc.pct],["Ventas cargadas hasta",cc.ventasHasta!=null?fmtDMY(new Date(cc.ventasHasta)):"sin ventas cargadas"],["Aclaración","Las ventas cargadas empiezan en "+P_.CFG.VENTAS_DESDE+" de 2026: \"sin compras\" significa sin compras desde "+P_.CFG.VENTAS_DESDE+"."]); }
     if(R.capacidad){ const c=R.capacidad; resumen.push([],["Padrón: visitas que hacen falta por mes (una cada 30 días)",c.padron],["Capacidad del mes (visitas)",c.capacidad],["Diferencia",c.diferencia],["Uso de la capacidad (%)",Math.round(c.uso*100)]); }
     resumen.push([],["Colores del arranque","Verde hasta "+P_.fmtMin(P_.CFG.ARRANQUE_VERDE)+", amarillo hasta "+P_.fmtMin(P_.CFG.ARRANQUE_AMBAR)+", rojo después"]);
     const dias=[["Fecha","Día","Arrancó","Terminó","Jornada (min)","Visitas","Color del arranque","Zonas"]].concat(R.dias.map(D=>[f(D.fecha),DS[new Date(D.fecha).getDay()],D.hArranque,D.hFin,D.minutos,D.visitas,COL[D.clase],D.zonas.map(z=>z.zona).join(", ")]));
     const cli=[["Fecha","Llegada","Salida (marca)","Estado","Código","Cliente","Dirección","Zona","Estuvo (min)","Última compra","Días sin comprar","Compra desde la visita","Nota","Dónde marcó","Negocio"]].concat(R.clientes.map(x=>{
-      const c=porCod[String(x.cod)]||{}, ult=c.ult||"", dd=P_.diasDesde(ult,ahora), neg=linkNegocio(String(x.cod)), marc=(x.mapa&&String(x.mapa).indexOf("http")===0)?x.mapa:"";
+      const c=porCod[String(x.cod)]||{}, ult=/^sin compras?$/i.test(String(c.ult||"").trim())?"Sin compras desde "+P_.CFG.VENTAS_DESDE:(c.ult||""), dd=P_.diasDesde(ult,ahora), neg=linkNegocio(String(x.cod)), marc=(x.mapa&&String(x.mapa).indexOf("http")===0)?x.mapa:"";
       return [f(x.fecha),x.horaLlegada||"",x.horaMarca||x.hora||"",x.tag,x.cod,x.nom,dirDe(x.cod),x.zona,x.seg==null?"":r1(x.seg/60),ult,dd==null?"":dd,x.compra==="compro"?"Compró el "+fmtDMY(new Date(x.compraFecha)):(x.compra==="sin"?"Sin compra desde la visita":(x.compra==="espera"?"En espera de facturación":"")),x.extra||"",marc?{url:marc,txt:"Ver dónde marcó"}:"",neg?{url:neg.url,txt:neg.txt}:""];
     }));
     const ale=[["Tipo","Cliente","Zona","Fecha","Hora","Detalle"]].concat(R.revisar.filter(x=>x.tipo!=="salteado").map(x=>[x.tag,x.cliente,x.zona,f(x.fecha),x.hora||"",x.detalle||""]));
@@ -1677,7 +1677,7 @@ const URL_SCRIPT = "https://script.google.com/macros/s/AKfycby6GjyrtZ1AwzaQ6kbr2
     box.appendChild(k);
     { const cc=R.compras;
       if(cc&&cc.total){ const v=el("div","addr"); v.id="cVentas";
-        v.appendChild(document.createTextNode(cc.ventasHasta!=null?"Ventas cargadas hasta el "+fmtDMY(new Date(cc.ventasHasta))+". ":"Todavía no hay ventas cargadas. "));
+        v.appendChild(document.createTextNode(cc.ventasHasta!=null?"Ventas cargadas desde "+P_.CFG.VENTAS_DESDE+" hasta el "+fmtDMY(new Date(cc.ventasHasta))+". ":"Todavía no hay ventas cargadas. "));
         if(cc.atrasadas){ const w=el("span","tag red","⚠ puede estar atrasada la importación de ventas"); v.appendChild(w); }
         box.appendChild(v); } }
     const panel=el("div","sec hidden"); panel.id="cLista"; box.appendChild(panel);
